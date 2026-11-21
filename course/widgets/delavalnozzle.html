@@ -88,6 +88,7 @@
   .results dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
   .results h3 { font-size: .85rem; margin: 10px 0 4px; color: var(--muted); font-weight: 600; }
   .plot-wrap { min-width: 0; }
+  .ct-big { text-align: center; font-size: 1.9rem; font-weight: 700; line-height: 1.2; margin-bottom: 2px; font-variant-numeric: tabular-nums; }
   .plot-title { text-align: center; min-height: 1.6em; margin-bottom: 4px; font-weight: 600; }
   svg { display: block; width: 100%; height: auto; margin: 0 auto; }
   svg text { fill: var(--muted); font: 11px system-ui, sans-serif; }
@@ -152,12 +153,17 @@
 
       <div class="results" id="results" aria-live="polite"></div>
       <p class="hint">
-        Pressure sliders are logarithmic. The nozzle is 2D, 0.1&nbsp;m deep, with exit-to-throat
-        area ratio 3.75. Thrust is <span class="m">\dot m U_e + (p_e-p_\text{amb})A_e</span>.
+        Pressure sliders are logarithmic. The nozzle is 2D (mass flow and thrust are per meter of
+        depth), with exit-to-throat area ratio 3.75. Thrust per depth is
+        <span class="m">\dot m' U_e + (p_e-p_\text{amb})H_e</span>, with <span class="m">\dot m'</span>
+        the mass flow per depth and <span class="m">H_e</span> the exit height. Thrust coefficient
+        <span class="m">C_T</span> is thrust per depth divided by <span class="m">p_0 H_t</span>, with
+        <span class="m">H_t</span> the throat height.
       </p>
     </form>
 
     <div class="plot-wrap">
+      <div class="ct-big" id="ct"></div>
       <div class="plot-title" id="title"></div>
       <svg id="plot" viewBox="0 0 640 660" role="img" aria-label="Nozzle geometry and Mach number, pressure, velocity, density and temperature along the nozzle"></svg>
     </div>
@@ -327,8 +333,11 @@
 
     const n = s.x.length - 1;
     s.pe = s.p[n]; s.Me = s.M[n]; s.Ue = s.U[n];
-    s.mdot = s.rho[n] * s.U[n] * A_E;
-    s.thrust = s.noFlow ? 0 : s.mdot * s.Ue + (s.pe - pamb) * A_E;
+    // 2D nozzle: report per unit depth into the page; H_e = full exit height
+    const He = A_E / WIDTH;
+    s.mdot = s.rho[n] * s.U[n] * He;                                    // kg/s per m of depth
+    s.thrust = s.noFlow ? 0 : s.mdot * s.Ue + (s.pe - pamb) * He;      // N per m of depth
+    s.CT = s.thrust / (p0 * A_T / WIDTH);     // thrust coefficient: thrust per depth / (p0 * throat height)
     // plot scales that depend only on the inputs (so the axes don't jump around)
     const TeD = T0 / (1 + (g - 1) / 2 * MeSup * MeSup);
     s.Uscale = MeSup * Math.sqrt(g * R * TeD);
@@ -469,6 +478,7 @@
 
     const ratio = inp.p0 / inp.pamb;
     document.getElementById('title').textContent = s.regime;
+    document.getElementById('ct').innerHTML = 'thrust coefficient&nbsp; C<sub>T</sub> = ' + s.CT.toFixed(2);
     document.getElementById('err').textContent = s.noFlow
       ? 'Raise p₀ or lower p_amb: the ambient pressure must be below the stagnation pressure.' : '';
 
@@ -483,8 +493,8 @@
     html += '<dt>exit Mach M<sub>e</sub></dt><dd>' + fmt(s.Me) + '</dd>' +
             '<dt>exit pressure p<sub>e</sub></dt><dd>' + fmt(s.pe / bar) + ' bar</dd>' +
             '<dt>exit velocity U<sub>e</sub></dt><dd>' + fmt(s.Ue) + ' m/s</dd>' +
-            '<dt>mass flow</dt><dd>' + fmt(s.mdot) + ' kg/s</dd>' +
-            '<dt>thrust</dt><dd>' + fmt(s.thrust) + ' N</dd></dl>' +
+            '<dt>mass flow per depth</dt><dd>' + fmt(s.mdot) + ' kg/(s&middot;m)</dd>' +
+            '<dt>thrust per depth</dt><dd>' + fmt(s.thrust) + ' N/m</dd></dl>' +
             '<h3>Regime boundaries for this p₀, γ</h3><dl>' +
             '<dt>throat chokes below</dt><dd>' + fmt(c.choke / bar) + ' bar</dd>' +
             '<dt>shock at exit plane</dt><dd>' + fmt(c.shockExit / bar) + ' bar</dd>' +

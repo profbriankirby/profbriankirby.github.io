@@ -88,6 +88,7 @@
   .results dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
   .results h3 { font-size: .85rem; margin: 10px 0 4px; color: var(--muted); font-weight: 600; }
   .plot-wrap { min-width: 0; }
+  .ct-big { text-align: center; font-size: 1.9rem; font-weight: 700; line-height: 1.2; margin-bottom: 2px; font-variant-numeric: tabular-nums; }
   .plot-title { text-align: center; min-height: 1.6em; margin-bottom: 4px; font-weight: 600; }
   canvas { display: block; width: 100%; }
   .caption { text-align: center; font-size: .85rem; color: var(--muted); margin: 4px 0 0; }
@@ -119,7 +120,7 @@
     This visualization shows dots moving that are meant to be representative of the fluid moving.
     Each dot travels at the local speed <span class="m">U(x)</span> from a quasi-1D calculation, and its
     color corresponds to the fluid temperature (red = hot, blue = cold).  A real nozzle would not be perfectly 
-    quasi-1D the shock, if there is one, would not be perfectly planar. Change the conditions and watch the shock appear, move, and leave the nozzle.
+    quasi-1D and the shock, if there is one, would not be perfectly planar. Change the conditions and watch the shock appear, move, and leave the nozzle.
   </p>
 
   <h2>Choose the conditions</h2>
@@ -157,11 +158,14 @@
       <div class="results" id="results" aria-live="polite"></div>
       <p class="hint">
         Pressure sliders are logarithmic. The nozzle is 2D, 0.1&nbsp;m deep, with exit-to-throat
-        area ratio 3.75. Thrust is <span class="m">\dot m U_e + (p_e-p_\text{amb})A_e</span>.
+        area ratio 3.75. Thrust coefficient (per unit depth):
+        <span class="m">C_T = \dfrac{\dot m' U_e + (p_e-p_\text{amb})H_e}{p_0 H_t}</span>,
+        with <span class="m">H_e,\ H_t</span> the exit and throat heights.
       </p>
     </form>
 
     <div class="plot-wrap">
+      <div class="ct-big" id="ct"></div>
       <div class="plot-title" id="title"></div>
       <canvas id="anim" role="img" aria-label="Animated dots flowing through the nozzle, colored by temperature"></canvas>
       <p class="caption" id="caption"></p>
@@ -333,7 +337,11 @@
     const n = s.x.length - 1;
     s.pe = s.p[n]; s.Me = s.M[n]; s.Ue = s.U[n];
     s.mdot = s.rho[n] * s.U[n] * A_E;
-    s.thrust = s.noFlow ? 0 : s.mdot * s.Ue + (s.pe - pamb) * A_E;
+    // thrust coefficient of this 2D nozzle (everything per unit depth into the page):
+    // C_T = [mdot' U_e + (p_e - p_amb) H_e] / (p0 H_t),  mdot' = rho_e U_e H_e,
+    // with H_e, H_t the full exit and throat heights; the depth cancels.
+    const He = A_E / WIDTH, Ht = A_T / WIDTH;
+    s.CT = s.noFlow ? 0 : (s.rho[n] * s.U[n] * s.U[n] * He + (s.pe - pamb) * He) / (p0 * Ht);
     // plot scales that depend only on the inputs (so the axes don't jump around)
     const TeD = T0 / (1 + (g - 1) / 2 * MeSup * MeSup);
     s.Uscale = MeSup * Math.sqrt(g * R * TeD);
@@ -536,6 +544,7 @@
 
     const ratio = inp.p0 / inp.pamb;
     document.getElementById('title').textContent = s.regime;
+    document.getElementById('ct').innerHTML = 'thrust coefficient&nbsp; C<sub>T</sub> = ' + s.CT.toFixed(2);
     document.getElementById('err').textContent = s.noFlow
       ? 'Raise p₀ or lower p_amb: the ambient pressure must be below the stagnation pressure.' : '';
 
@@ -550,8 +559,7 @@
     html += '<dt>exit Mach M<sub>e</sub></dt><dd>' + fmt(s.Me) + '</dd>' +
             '<dt>exit pressure p<sub>e</sub></dt><dd>' + fmt(s.pe / bar) + ' bar</dd>' +
             '<dt>exit velocity U<sub>e</sub></dt><dd>' + fmt(s.Ue) + ' m/s</dd>' +
-            '<dt>mass flow</dt><dd>' + fmt(s.mdot) + ' kg/s</dd>' +
-            '<dt>thrust</dt><dd>' + fmt(s.thrust) + ' N</dd></dl>' +
+            '<dt>mass flow</dt><dd>' + fmt(s.mdot) + ' kg/s</dd></dl>' +
             '<h3>Regime boundaries for this p₀, γ</h3><dl>' +
             '<dt>throat chokes below</dt><dd>' + fmt(c.choke / bar) + ' bar</dd>' +
             '<dt>shock at exit plane</dt><dd>' + fmt(c.shockExit / bar) + ' bar</dd>' +

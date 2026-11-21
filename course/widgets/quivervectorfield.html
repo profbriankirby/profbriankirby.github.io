@@ -1,0 +1,324 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Quiver Plot of a Vector Field</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mathjs/12.4.2/math.min.js"></script>
+<style>
+  :root {
+    --bg: #ffffff;
+    --fg: #1f2328;
+    --muted: #59636e;
+    --border: #d1d9e0;
+    --panel: #f6f8fa;
+    --accent: #0072bd;      /* MATLAB default line blue */
+    --arrow: #0072bd;
+    --axis: #59636e;
+    --grid: #e6e9ec;
+    --error: #b3261e;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0d1117;
+      --fg: #e6edf3;
+      --muted: #9198a1;
+      --border: #3d444d;
+      --panel: #151b23;
+      --accent: #4aa3df;
+      --arrow: #4aa3df;
+      --axis: #9198a1;
+      --grid: #262c33;
+      --error: #f28b82;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 16px;
+    background: var(--bg);
+    color: var(--fg);
+    font: 16px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  main { max-width: 900px; margin: 0 auto; }
+  h1 { font-size: 1.5rem; margin: 0 0 .5rem; }
+  h2 { font-size: 1.15rem; margin: 1.25rem 0 .4rem; }
+  p { margin: 0 0 .75rem; }
+  .layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 16px;
+    align-items: start;
+  }
+  @media (min-width: 620px) {
+    .layout { grid-template-columns: 250px minmax(0, 1fr); }
+  }
+  .controls {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  label { display: block; font-size: .9rem; color: var(--muted); margin-bottom: 4px; }
+  input[type=text] {
+    width: 100%;
+    padding: 7px 9px;
+    font: 15px/1.3 ui-monospace, Consolas, monospace;
+    color: var(--fg);
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+  }
+  input[type=text]:focus { outline: 2px solid var(--accent); outline-offset: 0; }
+  input[type=range] { width: 100%; accent-color: var(--accent); }
+  .range-row { display: flex; justify-content: space-between; font-size: .9rem; }
+  .range-row output { font-variant-numeric: tabular-nums; font-weight: 600; }
+  button {
+    padding: 9px 12px;
+    font: inherit;
+    font-weight: 600;
+    color: #fff;
+    background: var(--accent);
+    border: 0;
+    border-radius: 6px;
+    cursor: pointer;
+  }
+  button:hover { filter: brightness(1.08); }
+  .hint { font-size: .82rem; color: var(--muted); margin: 0; }
+  .hint code { font-size: .8rem; }
+  .error { color: var(--error); font-size: .88rem; min-height: 1.2em; margin: 0; }
+  .plot-wrap { min-width: 0; }
+  .plot-title { text-align: center; min-height: 2em; margin-bottom: 4px; overflow-x: auto; }
+  svg { display: block; width: 100%; max-width: 520px; height: auto; margin: 0 auto; }
+  svg text { fill: var(--muted); font: 12px system-ui, sans-serif; }
+  svg .grid { stroke: var(--grid); stroke-width: 1; }
+  svg .frame { stroke: var(--axis); stroke-width: 1; fill: none; }
+  svg .arrows { stroke: var(--arrow); fill: none; stroke-linecap: round; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Quiver Plot of a Vector Field</h1>
+  <p>
+    A quiver plot of a vector field places arrows (usually on a regular grid) to illustrate the
+    (usually) 2D structure of the field. It is routinely used in fluid mechanics, most often to
+    denote the velocity vector <span class="m">\vec{u}</span>.
+  </p>
+
+  <h2>Plot your own vector field</h2>
+  <p>
+    Type in the <span class="m">x</span> and <span class="m">y</span> components of the vector field
+    below, each written as functions of <span class="m">x</span> and <span class="m">y</span>.
+    The field is plotted on the domain <span class="m">-5 &lt; x &lt; 5,\ -5 &lt; y &lt; 5</span>.
+  </p>
+
+  <div class="layout">
+    <form class="controls" id="controls" autocomplete="off">
+      <div>
+        <label for="xc">x-component of vector field</label>
+        <input type="text" id="xc" value="-y" spellcheck="false">
+      </div>
+      <div>
+        <label for="yc">y-component of vector field</label>
+        <input type="text" id="yc" value="x" spellcheck="false">
+      </div>
+      <div>
+        <div class="range-row">
+          <label for="res" style="margin:0"># of arrows in each direction</label>
+          <output id="resOut" for="res">10</output>
+        </div>
+        <input type="range" id="res" min="10" max="50" step="10" value="10">
+      </div>
+      <button type="submit">Plot vector arrows!</button>
+      <p class="error" id="err" role="alert"></p>
+      <p class="hint">
+        Use MATLAB-style syntax: <code>x^2</code>, <code>sin(x)</code>, <code>exp(-y)</code>,
+        <code>sqrt(x^2+y^2)</code>, <code>pi</code>, <code>heaviside(x)</code>.
+        Points where the field is undefined are skipped.
+      </p>
+    </form>
+
+    <div class="plot-wrap">
+      <div class="plot-title" id="title"></div>
+      <svg id="plot" viewBox="0 0 440 440" role="img" aria-label="Quiver plot of the vector field"></svg>
+    </div>
+  </div>
+</main>
+
+<script>
+(function () {
+  // ---- Math setup -------------------------------------------------------
+  // MATLAB's heaviside: 0 for x<0, 1/2 at x=0, 1 for x>0
+  const heaviside = function (x) { return x > 0 ? 1 : (x < 0 ? 0 : 0.5); };
+  heaviside.toTex = { 1: '{H}\\left(${args[0]}\\right)' };
+  math.import({ heaviside: heaviside }, { override: true });
+
+  // Accept MATLAB element-wise operators (.* ./ .^) by mapping them to plain ones.
+  function fromMatlab(s) {
+    return s.replace(/\.([*\/^])/g, '$1');
+  }
+
+  function compile(src, label) {
+    const text = fromMatlab(src.trim());
+    if (!text) throw new Error(label + ' is empty.');
+    const node = math.parse(text);
+    // Only x, y and known constants/functions are allowed
+    node.traverse(function (n, path, parent) {
+      if (n.isSymbolNode && !(parent && parent.isFunctionNode && parent.fn === n)) {
+        if (!['x', 'y', 'pi', 'e'].includes(n.name)) {
+          throw new Error(label + ': unknown variable "' + n.name + '" (use only x and y).');
+        }
+      }
+    });
+    return { node: node, code: node.compile() };
+  }
+
+  // ---- LaTeX title (mirrors the MATLAB title) ---------------------------
+  function termTex(node) {
+    const n = node.isParenthesisNode ? node.content : node;
+    let tex = n.toTex({ parenthesis: 'auto' });
+    const isSum = n.isOperatorNode && (n.op === '+' || n.op === '-') && n.args.length === 2;
+    if (isSum) tex = '\\left(' + tex + '\\right)';
+    return tex;
+  }
+  function titleTex(xn, yn) {
+    const xt = termTex(xn);
+    let yt = termTex(yn);
+    let joiner = '+';
+    if (yt.startsWith('-')) { joiner = '-'; yt = yt.slice(1); }
+    return '\\text{The vector field }\\vec{u}=' + xt + '\\,\\hat{x}' + joiner + yt + '\\,\\hat{y}';
+  }
+
+  // ---- Plot geometry ----------------------------------------------------
+  const SVGNS = 'http://www.w3.org/2000/svg';
+  const svg = document.getElementById('plot');
+  const L = 48, T = 12, S = 380;      // plot box: left, top, size (px in viewBox units)
+  const AX = 6;                       // axis limits [-6, 6], as in axis([-6 6 -6 6])
+  const px = function (x) { return L + (x + AX) / (2 * AX) * S; };
+  const py = function (y) { return T + (AX - y) / (2 * AX) * S; };
+
+  function el(name, attrs, parent) {
+    const e = document.createElementNS(SVGNS, name);
+    for (const k in attrs) e.setAttribute(k, attrs[k]);
+    (parent || svg).appendChild(e);
+    return e;
+  }
+
+  function drawAxes() {
+    svg.textContent = '';
+    for (let v = -AX; v <= AX; v += 2) {
+      el('line', { x1: px(v), y1: T, x2: px(v), y2: T + S, class: 'grid' });
+      el('line', { x1: L, y1: py(v), x2: L + S, y2: py(v), class: 'grid' });
+      const tx = el('text', { x: px(v), y: T + S + 18, 'text-anchor': 'middle' });
+      tx.textContent = v;
+      const ty = el('text', { x: L - 8, y: py(v) + 4, 'text-anchor': 'end' });
+      ty.textContent = v;
+    }
+    el('rect', { x: L, y: T, width: S, height: S, class: 'frame' });
+  }
+
+  // ---- Quiver (MATLAB-style autoscaling) --------------------------------
+  function linspace(a, b, n) {
+    const out = [];
+    for (let i = 0; i < n; i++) out.push(a + (b - a) * i / (n - 1));
+    return out;
+  }
+
+  function plot() {
+    const errEl = document.getElementById('err');
+    errEl.textContent = '';
+    let fx, fy;
+    try {
+      fx = compile(document.getElementById('xc').value, 'x-component');
+      fy = compile(document.getElementById('yc').value, 'y-component');
+    } catch (e) {
+      errEl.textContent = e.message;
+      return;
+    }
+
+    const res = +document.getElementById('res').value;
+    const g = linspace(-5, 5, res);
+    const h = g[1] - g[0];
+    const pts = [];
+    let maxLen = 0, skipped = 0;
+
+    try {
+      for (const yv of g) {
+        for (const xv of g) {
+          const u = Number(fx.code.evaluate({ x: xv, y: yv }));
+          const v = Number(fy.code.evaluate({ x: xv, y: yv }));
+          if (!isFinite(u) || !isFinite(v)) { skipped++; continue; }
+          pts.push([xv, yv, u, v]);
+          const len = Math.hypot(u / h, v / h);
+          if (len > maxLen) maxLen = len;
+        }
+      }
+    } catch (e) {
+      errEl.textContent = 'Could not evaluate: ' + e.message;
+      return;
+    }
+
+    drawAxes();
+    // Same idea as MATLAB quiver's AutoScaleFactor = 0.9:
+    // the longest arrow is 0.9 grid spacings long.
+    const scale = maxLen > 0 ? 0.9 / maxLen : 0;
+    const strokeW = res <= 20 ? 1.4 : (res <= 30 ? 1.1 : 0.9);
+    const group = el('g', { class: 'arrows', 'stroke-width': strokeW });
+
+    for (const [xv, yv, u, v] of pts) {
+      const x0 = px(xv), y0 = py(yv);
+      const x1 = px(xv + u * scale), y1 = py(yv + v * scale);
+      const dx = x1 - x0, dy = y1 - y0;
+      const len = Math.hypot(dx, dy);
+      if (len < 1e-6) continue;
+      let d = 'M' + x0.toFixed(2) + ',' + y0.toFixed(2) + 'L' + x1.toFixed(2) + ',' + y1.toFixed(2);
+      // arrowhead: two short barbs, ~30% of arrow length, angled 20 degrees
+      const head = Math.min(0.3 * len, 10);
+      const ang = Math.atan2(dy, dx);
+      for (const s of [1, -1]) {
+        const a = ang + Math.PI - s * 0.35;
+        d += 'M' + x1.toFixed(2) + ',' + y1.toFixed(2) +
+             'L' + (x1 + head * Math.cos(a)).toFixed(2) + ',' + (y1 + head * Math.sin(a)).toFixed(2);
+      }
+      el('path', { d: d }, group);
+    }
+
+    const titleEl = document.getElementById('title');
+    try {
+      katex.render(titleTex(fx.node, fy.node), titleEl, { throwOnError: false, displayMode: false });
+    } catch (e) {
+      titleEl.textContent = '';
+    }
+    if (skipped > 0) {
+      errEl.textContent = skipped + ' grid point' + (skipped > 1 ? 's' : '') +
+        ' skipped where the field is undefined.';
+    }
+  }
+
+  // ---- Wire up ----------------------------------------------------------
+  document.querySelectorAll('.m').forEach(function (n) {
+    katex.render(n.textContent, n, { throwOnError: false });
+  });
+  const res = document.getElementById('res');
+  const resOut = document.getElementById('resOut');
+  // Optional preset from the URL, e.g. ?u=y/(x^2+y^2)&v=-x/(x^2+y^2)&n=20
+  const q = new URLSearchParams(location.search);
+  if (q.has('u')) document.getElementById('xc').value = q.get('u');
+  if (q.has('v')) document.getElementById('yc').value = q.get('v');
+  if (q.has('n') && ['10', '20', '30', '40', '50'].includes(q.get('n'))) res.value = q.get('n');
+  resOut.textContent = res.value;
+  res.addEventListener('input', function () { resOut.textContent = res.value; plot(); });
+  document.getElementById('controls').addEventListener('submit', function (e) {
+    e.preventDefault();
+    plot();
+  });
+  plot();
+})();
+</script>
+</body>
+</html>

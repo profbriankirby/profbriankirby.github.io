@@ -1,0 +1,596 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Visualize Fluid Flow Through a de Laval Nozzle</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.js"></script>
+<style>
+  :root {
+    --bg: #ffffff;
+    --fg: #1f2328;
+    --muted: #59636e;
+    --border: #d1d9e0;
+    --panel: #f6f8fa;
+    --accent: #0072bd;      /* MATLAB default line blue */
+    --axis: #59636e;
+    --grid: #e6e9ec;
+    --error: #b3261e;
+    --wall: #1f2328;
+    --shock: #d95319;       /* MATLAB orange */
+    --c-mach: #d62728;
+    --c-p: #0072bd;
+    --c-u: #0e9aa7;
+    --c-rho: #2ca02c;
+    --c-t: #b5179e;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0d1117;
+      --fg: #e6edf3;
+      --muted: #9198a1;
+      --border: #3d444d;
+      --panel: #151b23;
+      --accent: #4aa3df;
+      --axis: #9198a1;
+      --grid: #262c33;
+      --error: #f28b82;
+      --wall: #e6edf3;
+      --shock: #ff9f43;
+      --c-mach: #ff6b6b;
+      --c-p: #4aa3df;
+      --c-u: #3dd6e0;
+      --c-rho: #5fd35f;
+      --c-t: #f06ad8;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 16px;
+    background: var(--bg);
+    color: var(--fg);
+    font: 16px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  main { max-width: 960px; margin: 0 auto; }
+  h1 { font-size: 1.5rem; margin: 0 0 .5rem; }
+  h2 { font-size: 1.15rem; margin: 1.25rem 0 .4rem; }
+  p { margin: 0 0 .75rem; }
+  .layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 16px;
+    align-items: start;
+  }
+  @media (min-width: 680px) {
+    .layout { grid-template-columns: 250px minmax(0, 1fr); }
+  }
+  .controls {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  label { display: block; font-size: .9rem; color: var(--muted); margin-bottom: 4px; }
+  input[type=range] { width: 100%; accent-color: var(--accent); }
+  .range-row { display: flex; justify-content: space-between; align-items: baseline; font-size: .9rem; }
+  .range-row output { font-variant-numeric: tabular-nums; font-weight: 600; }
+  .hint { font-size: .82rem; color: var(--muted); margin: 0; }
+  .error { color: var(--error); font-size: .88rem; margin: 0; }
+  .results { border-top: 1px solid var(--border); padding-top: 10px; font-size: .85rem; }
+  .results .regime { font-weight: 600; margin-bottom: 6px; }
+  .results dl { margin: 0; display: grid; grid-template-columns: auto auto; column-gap: 8px; row-gap: 2px; }
+  .results dt { color: var(--muted); }
+  .results dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
+  .results h3 { font-size: .85rem; margin: 10px 0 4px; color: var(--muted); font-weight: 600; }
+  .plot-wrap { min-width: 0; }
+  .plot-title { text-align: center; min-height: 1.6em; margin-bottom: 4px; font-weight: 600; }
+  canvas { display: block; width: 100%; }
+  .caption { text-align: center; font-size: .85rem; color: var(--muted); margin: 4px 0 0; }
+  a { color: var(--accent); }
+  button {
+    padding: 9px 12px;
+    font: inherit;
+    font-weight: 600;
+    color: #fff;
+    background: var(--accent);
+    border: 0;
+    border-radius: 6px;
+    cursor: pointer;
+  }
+  button:hover { filter: brightness(1.08); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Visualize Fluid Flow Through a de Laval Nozzle</h1>
+  <p>
+    This rocket nozzle is a converging&ndash;diverging (de Laval) nozzle. High-enthalpy gas (high temperature,
+    high pressure) from the
+    combustion chamber speeds up through the converging section.  If the pressure ratio is high enough,
+    the flow goes sonic at the throat and keeps accelerating to supersonic speed in the diverging section,
+    turning enthalpy into velocity and increasing thrust.
+  </p>
+  <p>
+    This visualization shows dots moving that are meant to be representative of the fluid moving.
+    Each dot travels at the local speed <span class="m">U(x)</span> from a quasi-1D calculation, and its
+    color corresponds to the fluid temperature (red = hot, blue = cold).  A real nozzle would not be perfectly 
+    quasi-1D the shock, if there is one, would not be perfectly planar. Change the conditions and watch the shock appear, move, and leave the nozzle.
+  </p>
+
+  <h2>Choose the conditions</h2>
+
+  <div class="layout">
+    <form class="controls" id="controls" autocomplete="off">
+      <div>
+        <div class="range-row"><label for="T0" style="margin:0"><span class="m">T_0</span> (stagnation temperature)</label></div>
+        <div class="range-row"><span></span><output id="T0Out"></output></div>
+        <input type="range" id="T0" min="300" max="2500" step="10" value="2000">
+      </div>
+      <div>
+        <div class="range-row"><label for="p0" style="margin:0"><span class="m">p_0</span> (stagnation pressure)</label></div>
+        <div class="range-row"><span></span><output id="p0Out"></output></div>
+        <input type="range" id="p0" min="0" max="3" step="0.005" value="0.30103">
+      </div>
+      <div>
+        <div class="range-row"><label for="pamb" style="margin:0"><span class="m">p_\text{amb}</span> (ambient pressure)</label></div>
+        <div class="range-row"><span></span><output id="pambOut"></output></div>
+        <input type="range" id="pamb" min="-3" max="0" step="0.005" value="0">
+      </div>
+      <div>
+        <div class="range-row"><label for="R" style="margin:0"><span class="m">R</span> (specific gas constant)</label></div>
+        <div class="range-row"><span></span><output id="ROut"></output></div>
+        <input type="range" id="R" min="250" max="1000" step="1" value="287">
+      </div>
+      <div>
+        <div class="range-row"><label for="gamma" style="margin:0"><span class="m">\gamma</span> (ratio of specific heats)</label></div>
+        <div class="range-row"><span></span><output id="gammaOut"></output></div>
+        <input type="range" id="gamma" min="1.18" max="1.4" step="0.01" value="1.4">
+      </div>
+      <button type="button" id="pause">Pause</button>
+      <p class="error" id="err" role="alert"></p>
+
+      <div class="results" id="results" aria-live="polite"></div>
+      <p class="hint">
+        Pressure sliders are logarithmic. The nozzle is 2D, 0.1&nbsp;m deep, with exit-to-throat
+        area ratio 3.75. Thrust is <span class="m">\dot m U_e + (p_e-p_\text{amb})A_e</span>.
+      </p>
+    </form>
+
+    <div class="plot-wrap">
+      <div class="plot-title" id="title"></div>
+      <canvas id="anim" role="img" aria-label="Animated dots flowing through the nozzle, colored by temperature"></canvas>
+      <p class="caption" id="caption"></p>
+    </div>
+  </div>
+</main>
+
+<script>
+(function () {
+  // ---- Nozzle geometry: [x (m), half-height (m)], throat at x = 0 ------
+  // (from de_laval_nozzle.mlx; designed by the method of characteristics)
+  const NOZ = [
+    [-0.02, 0.05], [-0.0198, 0.05], [-0.0196, 0.05], [-0.0194, 0.05], [-0.0192, 0.05], [-0.019, 0.05],
+    [-0.0188, 0.05], [-0.0186, 0.05], [-0.0184, 0.05], [-0.0182, 0.05], [-0.018, 0.05], [-0.0178, 0.05],
+    [-0.0176, 0.05], [-0.0174, 0.05], [-0.0172, 0.05], [-0.017, 0.05], [-0.0168, 0.05], [-0.0166, 0.05],
+    [-0.0164, 0.05], [-0.0162, 0.05], [-0.016, 0.05], [-0.0158, 0.05], [-0.0156, 0.05], [-0.0154, 0.05],
+    [-0.0152, 0.05], [-0.015, 0.05], [-0.0148, 0.05], [-0.0146, 0.05], [-0.0144, 0.05], [-0.0142, 0.05],
+    [-0.014, 0.05], [-0.0138, 0.05], [-0.0136, 0.05], [-0.0134, 0.05], [-0.0132, 0.05], [-0.013, 0.05],
+    [-0.0128, 0.05], [-0.0126, 0.05], [-0.0124, 0.05], [-0.0122, 0.05], [-0.012, 0.05], [-0.0118, 0.05],
+    [-0.0116, 0.05], [-0.0114, 0.05], [-0.0112, 0.05], [-0.011, 0.05], [-0.0108, 0.05], [-0.0106, 0.05],
+    [-0.0104, 0.05], [-0.0102, 0.05], [-0.01, 0.05], [-0.0098, 0.0493], [-0.0096, 0.0485], [-0.0094, 0.0478],
+    [-0.0092, 0.047], [-0.009, 0.0462], [-0.0088, 0.0455], [-0.0086, 0.0447], [-0.0084, 0.044], [-0.0082, 0.0433],
+    [-0.008, 0.0425], [-0.0078, 0.0418], [-0.0076, 0.041], [-0.0074, 0.0403], [-0.0072, 0.0395], [-0.007, 0.0387],
+    [-0.0068, 0.038], [-0.0066, 0.0373], [-0.0064, 0.0365], [-0.0062, 0.0358], [-0.006, 0.035], [-0.0058, 0.0343],
+    [-0.0056, 0.0335], [-0.0054, 0.0328], [-0.0052, 0.032], [-0.005, 0.0313], [-0.0048, 0.0305], [-0.0046, 0.0297],
+    [-0.0044, 0.029], [-0.0042, 0.0283], [-0.004, 0.0275], [-0.0038, 0.0267], [-0.0036, 0.026], [-0.0034, 0.0252],
+    [-0.0032, 0.0245], [-0.003, 0.0237], [-0.0028, 0.023], [-0.0026, 0.0222], [-0.0024, 0.0215], [-0.0022, 0.0208],
+    [-0.002, 0.02], [-0.0018, 0.0192], [-0.0016, 0.0185], [-0.0014, 0.0177], [-0.0012, 0.017], [-0.001, 0.0163],
+    [-0.0008, 0.0155], [-0.0006, 0.0147], [-0.0004, 0.014], [-0.0002, 0.0132], [0, 0.0125], [0.0018, 0.0133],
+    [0.0037, 0.0141], [0.0055, 0.0149], [0.0073, 0.0157], [0.0092, 0.0165], [0.011, 0.0173], [0.0128, 0.0181],
+    [0.0147, 0.0189], [0.0165, 0.0196], [0.0184, 0.0204], [0.0202, 0.0212], [0.022, 0.022], [0.0239, 0.0227],
+    [0.0257, 0.0234], [0.0275, 0.0242], [0.0294, 0.0249], [0.0312, 0.0256], [0.033, 0.0262], [0.0349, 0.0269],
+    [0.0367, 0.0275], [0.0385, 0.0282], [0.0404, 0.0288], [0.0422, 0.0294], [0.044, 0.03], [0.0459, 0.0305],
+    [0.0477, 0.0311], [0.0495, 0.0316], [0.0514, 0.0321], [0.0532, 0.0327], [0.0551, 0.0331], [0.0569, 0.0336],
+    [0.0587, 0.0341], [0.0606, 0.0346], [0.0624, 0.035], [0.0642, 0.0354], [0.0661, 0.0359], [0.0679, 0.0363],
+    [0.0697, 0.0367], [0.0716, 0.0371], [0.0734, 0.0375], [0.0752, 0.0378], [0.0771, 0.0382], [0.0789, 0.0385],
+    [0.0807, 0.0389], [0.0826, 0.0392], [0.0844, 0.0395], [0.0862, 0.0398], [0.0881, 0.0402], [0.0899, 0.0404],
+    [0.0918, 0.0407], [0.0936, 0.041], [0.0954, 0.0413], [0.0973, 0.0415], [0.0991, 0.0418], [0.1009, 0.0421],
+    [0.1028, 0.0423], [0.1046, 0.0425], [0.1064, 0.0428], [0.1083, 0.043], [0.1101, 0.0432], [0.1119, 0.0434],
+    [0.1138, 0.0436], [0.1156, 0.0438], [0.1174, 0.044], [0.1193, 0.0441], [0.1211, 0.0443], [0.1229, 0.0445],
+    [0.1248, 0.0446], [0.1266, 0.0448], [0.1285, 0.0449], [0.1303, 0.0451], [0.1321, 0.0452], [0.134, 0.0453],
+    [0.1358, 0.0455], [0.1376, 0.0456], [0.1395, 0.0457], [0.1413, 0.0458], [0.1431, 0.0459], [0.145, 0.046],
+    [0.1468, 0.0461], [0.1486, 0.0462], [0.1505, 0.0463], [0.1523, 0.0463], [0.1541, 0.0464], [0.156, 0.0465],
+    [0.1578, 0.0465], [0.1596, 0.0466], [0.1615, 0.0466], [0.1633, 0.0467], [0.1652, 0.0467], [0.167, 0.0468],
+    [0.1688, 0.0468], [0.1707, 0.0468], [0.1725, 0.0469], [0.1743, 0.0469], [0.1762, 0.0469], [0.178, 0.0469],
+    [0.1798, 0.0469], [0.1817, 0.0469], [0.1835, 0.0469]
+  ];
+  const WIDTH = 0.1;                       // depth into the page (m)
+  const X = NOZ.map(function (r) { return r[0]; });
+  const H = NOZ.map(function (r) { return r[1]; });
+  const A = H.map(function (h) { return 2 * h * WIDTH; });
+  let iT = 0;
+  for (let i = 1; i < A.length; i++) if (A[i] < A[iT]) iT = i;
+  const A_T = A[iT], X_T = X[iT], A_E = A[A.length - 1], X_E = X[X.length - 1];
+  const TOL = 1e-3;                        // exit-pressure tolerance for the shock search (0.1%)
+
+  function areaAt(x) {                     // linear interpolation of A(x)
+    for (let i = 1; i < X.length; i++) {
+      if (x <= X[i]) {
+        const f = (x - X[i - 1]) / (X[i] - X[i - 1]);
+        return A[i - 1] + f * (A[i] - A[i - 1]);
+      }
+    }
+    return A_E;
+  }
+
+  // ---- Compressible-flow relations -------------------------------------
+  function pRatio(M, g) { return Math.pow(1 + (g - 1) / 2 * M * M, -g / (g - 1)); }      // p/p0
+  function areaRatio(M, g) {                                                            // A/A*
+    return (1 / M) * Math.pow((2 / (g + 1)) * (1 + (g - 1) / 2 * M * M), (g + 1) / (2 * (g - 1)));
+  }
+  function machFromArea(Ar, supersonic, g) {   // invert A/A* on one branch by bisection
+    if (Ar <= 1) return 1;
+    let lo = supersonic ? 1 : 1e-9, hi = supersonic ? 100 : 1;
+    for (let k = 0; k < 80; k++) {
+      const mid = 0.5 * (lo + hi);
+      const f = areaRatio(mid, g) - Ar;
+      // A/A* falls with M on the subsonic branch and rises on the supersonic branch
+      if ((f > 0) === supersonic) hi = mid; else lo = mid;
+    }
+    return 0.5 * (lo + hi);
+  }
+  function shockPRatio(M1, g) { return 1 + 2 * g / (g + 1) * (M1 * M1 - 1); }          // p2/p1
+  function shockM2(M1, g) { return Math.sqrt(((g - 1) / 2 * M1 * M1 + 1) / (g * M1 * M1 - (g - 1) / 2)); }
+  function shockP0Ratio(M1, g) {                                                        // p02/p01
+    return shockPRatio(M1, g) * pRatio(M1, g) / pRatio(shockM2(M1, g), g);
+  }
+
+  // isentropic supersonic to x_s, normal shock, isentropic subsonic to the exit
+  function exitPressureWithShock(xs, p0, g) {
+    const M1 = machFromArea(areaAt(xs) / A_T, true, g);
+    const p02 = p0 * shockP0Ratio(M1, g);
+    const Astar2 = A_T * p0 / p02;          // mdot ~ p0 A* / sqrt(T0), T0 unchanged
+    const Me = machFromArea(A_E / Astar2, false, g);
+    return p02 * pRatio(Me, g);
+  }
+
+  // ---- Solve one case ---------------------------------------------------
+  function solve(p0, T0, pamb, R, g) {
+    const MeSub = machFromArea(A_E / A_T, false, g);
+    const MeSup = machFromArea(A_E / A_T, true, g);
+    const crit = {
+      choke: p0 * pRatio(MeSub, g),                       // highest p_amb that chokes the throat
+      design: p0 * pRatio(MeSup, g),                      // isentropic supersonic exit pressure
+      MeSup: MeSup
+    };
+    crit.shockExit = crit.design * shockPRatio(MeSup, g); // p behind a normal shock at the exit
+
+    const s = { crit: crit, xShock: NaN, nIter: 0 };
+    let xs = X.slice(), M, p0x;
+
+    if (pamb >= p0) {
+      s.regime = 'No flow (ambient pressure ≥ stagnation pressure)';
+      M = X.map(function () { return 0; });
+      p0x = X.map(function () { return p0; });
+      s.noFlow = true;
+    } else if (pamb >= crit.choke) {
+      // not choked: subsonic and isentropic everywhere, exit pressure = ambient
+      const Me = Math.sqrt(2 / (g - 1) * (Math.pow(p0 / pamb, (g - 1) / g) - 1));
+      const Astar = A_E / areaRatio(Me, g);
+      M = A.map(function (a) { return machFromArea(a / Astar, false, g); });
+      p0x = X.map(function () { return p0; });
+      s.regime = 'Subsonic throughout (throat not choked)';
+    } else if (pamb <= crit.shockExit) {
+      // ambient below the pressure behind an exit-plane shock: no shock inside
+      M = X.map(function (x, i) { return machFromArea(A[i] / A_T, x >= X_T, g); });
+      p0x = X.map(function () { return p0; });
+      const pe = p0 * pRatio(M[M.length - 1], g);
+      if (Math.abs(pe - pamb) / pamb < TOL) s.regime = 'Choked, isentropic: design condition';
+      else if (pe > pamb) s.regime = 'Choked, isentropic: underexpanded (expansion fans outside)';
+      else s.regime = 'Choked, isentropic: overexpanded (oblique shocks outside)';
+    } else {
+      // normal shock in the diverging section: bisection on its location
+      let lo = X_T, hi = X_E, x_s = 0.5 * (lo + hi), it;
+      for (it = 1; it <= 100; it++) {
+        x_s = 0.5 * (lo + hi);              // first guess: halfway from throat to exit
+        const pe = exitPressureWithShock(x_s, p0, g);
+        if (Math.abs(pe - pamb) / pamb < TOL) break;
+        if (pe > pamb) lo = x_s; else hi = x_s;   // exit p too high: move shock downstream
+      }
+      s.xShock = x_s; s.nIter = Math.min(it, 100);
+      s.regime = 'Choked, normal shock in the nozzle';
+
+      const M1 = machFromArea(areaAt(x_s) / A_T, true, g);
+      const p02 = p0 * shockP0Ratio(M1, g);
+      const Astar2 = A_T * p0 / p02;
+      xs = []; M = []; p0x = [];
+      for (let i = 0; i < X.length; i++) {
+        if (X[i] < x_s) {
+          xs.push(X[i]); M.push(machFromArea(A[i] / A_T, X[i] >= X_T, g)); p0x.push(p0);
+        }
+      }
+      xs.push(x_s, x_s); M.push(M1, shockM2(M1, g)); p0x.push(p0, p02);   // vertical jump
+      for (let i = 0; i < X.length; i++) {
+        if (X[i] > x_s) {
+          xs.push(X[i]); M.push(machFromArea(A[i] / Astar2, false, g)); p0x.push(p02);
+        }
+      }
+      s.A1 = areaAt(x_s); s.M1 = M1;
+    }
+
+    // T0 is constant everywhere (adiabatic, including across the shock)
+    s.x = xs; s.M = M;
+    s.p = M.map(function (m, i) { return p0x[i] * pRatio(m, g); });
+    s.T = M.map(function (m) { return T0 / (1 + (g - 1) / 2 * m * m); });
+    s.rho = s.p.map(function (p, i) { return p / (R * s.T[i]); });
+    s.U = M.map(function (m, i) { return m * Math.sqrt(g * R * s.T[i]); });
+
+    const n = s.x.length - 1;
+    s.pe = s.p[n]; s.Me = s.M[n]; s.Ue = s.U[n];
+    s.mdot = s.rho[n] * s.U[n] * A_E;
+    s.thrust = s.noFlow ? 0 : s.mdot * s.Ue + (s.pe - pamb) * A_E;
+    // plot scales that depend only on the inputs (so the axes don't jump around)
+    const TeD = T0 / (1 + (g - 1) / 2 * MeSup * MeSup);
+    s.Uscale = MeSup * Math.sqrt(g * R * TeD);
+    return s;
+  }
+
+  function fmt(v, sig) {          // number to ~sig significant figures
+    sig = sig || 3;
+    if (!isFinite(v)) return '—';
+    if (v === 0) return '0';
+    const a = Math.abs(v);
+    if (a >= 1e5 || a < 1e-3) return v.toExponential(sig - 1);
+    return Number(v.toPrecision(sig)).toString();
+  }
+
+  // ---- Dot animation ----------------------------------------------------
+  // Each dot moves at the local flow speed u(x).  Rather than step x += u dt,
+  // use the exact travel time from the inlet, tau(x) = integral of dx/u:
+  // a dot that is a fraction f of the way through its transit sits at
+  // x = tau^-1(f * tau_exit).  Dots enter at a steady rate, so the number of
+  // dots per unit area ~ 1/(u h) ~ rho: they bunch up where the gas is dense.
+  const canvas = document.getElementById('anim');
+  const ctx = canvas.getContext('2d');
+  const XLIM = [-0.025, 0.19], YLIM = [-0.056, 0.056];
+  const N_DOTS = 3000;            // number of dots
+  const NT = 4000;                // samples in the transit-fraction lookup table
+  const CROSS_SECONDS = 1.5;      // real seconds for the fastest dot to cross the nozzle
+  const NBINS = 64;               // colour bins (dots drawn in batches per colour)
+  const frac = new Float64Array(N_DOTS), yf = new Float64Array(N_DOTS);
+  for (let i = 0; i < N_DOTS; i++) { frac[i] = Math.random(); yf[i] = 2 * Math.random() - 1; }
+
+  let flow = null;                // lookup tables for the current case
+  let paused = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  function jet(v) {               // blue (0) -> cyan -> yellow -> red (1)
+    v = Math.min(1, Math.max(0, v));
+    const c = function (d) { return Math.round(255 * Math.min(1, Math.max(0, 1.5 - Math.abs(4 * v - d)))); };
+    return 'rgb(' + c(3) + ',' + c(2) + ',' + c(1) + ')';
+  }
+  const BIN_COLORS = [];
+  for (let b = 0; b < NBINS; b++) BIN_COLORS.push(jet(b / (NBINS - 1)));
+
+  function setFlow(s, inp) {
+    const xs = s.x.slice(), U = s.U, T = s.T;
+    const n = xs.length;
+    for (let i = 1; i < n; i++) if (xs[i] <= xs[i - 1]) xs[i] = xs[i - 1] + 1e-9;  // shock: two points at one x
+    const xT = new Float64Array(NT), TT = new Float64Array(NT), hT = new Float64Array(NT);
+    let rate = 0;
+    if (s.noFlow) {
+      for (let j = 0; j < NT; j++) { xT[j] = X[0] + (X_E - X[0]) * j / (NT - 1); TT[j] = inp.T0; }
+    } else {
+      const tau = new Float64Array(n);
+      for (let i = 1; i < n; i++) tau[i] = tau[i - 1] + 0.5 * (xs[i] - xs[i - 1]) * (1 / U[i] + 1 / U[i - 1]);
+      const tauEnd = tau[n - 1];
+      let k = 1;
+      for (let j = 0; j < NT; j++) {            // invert tau(x) on a uniform grid of transit fraction
+        const t = tauEnd * j / (NT - 1);
+        while (k < n - 1 && tau[k] < t) k++;
+        const f = (t - tau[k - 1]) / (tau[k] - tau[k - 1]);
+        xT[j] = xs[k - 1] + f * (xs[k] - xs[k - 1]);
+        TT[j] = T[k - 1] + f * (T[k] - T[k - 1]);
+      }
+      let Umax = 0;
+      for (let i = 0; i < n; i++) Umax = Math.max(Umax, U[i]);
+      const simPerReal = (X_E - X[0]) / Umax / CROSS_SECONDS;   // simulated s per real s
+      rate = simPerReal / tauEnd;                               // transit fraction per real s
+      s.slowdown = 1 / simPerReal;
+    }
+    for (let j = 0; j < NT; j++) hT[j] = areaAt(xT[j]) / (2 * WIDTH);
+    const Tmin = inp.T0 / (1 + (inp.g - 1) / 2 * s.crit.MeSup * s.crit.MeSup);  // design exit T
+    flow = { xT: xT, TT: TT, hT: hT, rate: rate, Tmin: Tmin, Tmax: inp.T0, xShock: s.xShock };
+  }
+
+  // canvas layout (CSS px); x and y drawn to the same scale
+  const MG = { l: 46, r: 72, t: 8, b: 40 };
+  let W = 0, Hc = 0, scale = 1;
+  const theme = {};
+  function readTheme() {
+    const cs = getComputedStyle(document.documentElement);
+    ['--muted', '--axis', '--grid', '--wall', '--shock'].forEach(function (k) { theme[k] = cs.getPropertyValue(k).trim(); });
+  }
+  function resize() {
+    const cssW = canvas.parentElement.clientWidth;
+    scale = (cssW - MG.l - MG.r) / (XLIM[1] - XLIM[0]);
+    W = cssW; Hc = MG.t + MG.b + scale * (YLIM[1] - YLIM[0]);
+    const dpr = window.devicePixelRatio || 1;
+    canvas.style.height = Hc + 'px';
+    canvas.width = Math.round(W * dpr); canvas.height = Math.round(Hc * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  const cx = function (x) { return MG.l + (x - XLIM[0]) * scale; };
+  const cy = function (y) { return MG.t + (YLIM[1] - y) * scale; };
+
+  function drawFrame() {
+    const F = flow;
+    ctx.clearRect(0, 0, W, Hc);
+    ctx.font = '11px system-ui, sans-serif';
+    // grid and tick labels
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = theme['--grid']; ctx.fillStyle = theme['--muted'];
+    ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+    for (let v = 0; v <= 0.15 + 1e-9; v += 0.05) {
+      ctx.beginPath(); ctx.moveTo(cx(v), cy(YLIM[1])); ctx.lineTo(cx(v), cy(YLIM[0])); ctx.stroke();
+      ctx.fillText(v.toFixed(2), cx(v), cy(YLIM[0]) + 4);
+    }
+    ctx.fillText('distance from throat, x (m)', cx(0.5 * (XLIM[0] + XLIM[1])), cy(YLIM[0]) + 20);
+    ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+    for (let v = -0.05; v <= 0.05 + 1e-9; v += 0.025) {
+      ctx.beginPath(); ctx.moveTo(cx(XLIM[0]), cy(v)); ctx.lineTo(cx(XLIM[1]), cy(v)); ctx.stroke();
+      ctx.fillText((Math.abs(v) < 1e-9 ? 0 : v).toFixed(3), cx(XLIM[0]) - 4, cy(v));
+    }
+    ctx.strokeStyle = theme['--axis'];
+    ctx.strokeRect(cx(XLIM[0]), cy(YLIM[1]), (XLIM[1] - XLIM[0]) * scale, (YLIM[1] - YLIM[0]) * scale);
+
+    // dots, batched by colour
+    const r = Math.max(1.2, Math.min(2.2, scale * 0.0006));
+    const paths = [];
+    for (let b = 0; b < NBINS; b++) paths.push(new Path2D());
+    const span = F.Tmax - F.Tmin;
+    for (let i = 0; i < N_DOTS; i++) {
+      const p = frac[i] * (NT - 1), j = Math.min(NT - 2, Math.floor(p)), f = p - j;
+      const x = F.xT[j] + f * (F.xT[j + 1] - F.xT[j]);
+      const h = F.hT[j] + f * (F.hT[j + 1] - F.hT[j]);
+      const T = F.TT[j] + f * (F.TT[j + 1] - F.TT[j]);
+      const b = Math.max(0, Math.min(NBINS - 1, Math.round((T - F.Tmin) / span * (NBINS - 1))));
+      const px = cx(x), py = cy(yf[i] * h);
+      paths[b].moveTo(px + r, py);
+      paths[b].arc(px, py, r, 0, 2 * Math.PI);
+    }
+    for (let b = 0; b < NBINS; b++) { ctx.fillStyle = BIN_COLORS[b]; ctx.fill(paths[b]); }
+
+    // walls and shock
+    ctx.strokeStyle = theme['--wall']; ctx.lineWidth = 1.8;
+    for (const sgn of [1, -1]) {
+      ctx.beginPath();
+      for (let i = 0; i < X.length; i++) {
+        if (i) ctx.lineTo(cx(X[i]), cy(sgn * H[i])); else ctx.moveTo(cx(X[i]), cy(sgn * H[i]));
+      }
+      ctx.stroke();
+    }
+    if (isFinite(F.xShock)) {
+      const hs = areaAt(F.xShock) / (2 * WIDTH);
+      ctx.strokeStyle = theme['--shock']; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.moveTo(cx(F.xShock), cy(hs)); ctx.lineTo(cx(F.xShock), cy(-hs)); ctx.stroke();
+    }
+
+    // colour bar
+    const bx = cx(XLIM[1]) + 12, bw = 12, by0 = cy(YLIM[1]), bh = (YLIM[1] - YLIM[0]) * scale;
+    for (let b = 0; b < NBINS; b++) {
+      ctx.fillStyle = BIN_COLORS[b];
+      ctx.fillRect(bx, by0 + bh * (1 - (b + 1) / NBINS), bw, bh / NBINS + 0.5);
+    }
+    ctx.strokeStyle = theme['--axis']; ctx.lineWidth = 1; ctx.strokeRect(bx, by0, bw, bh);
+    ctx.fillStyle = theme['--muted']; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+    for (const q of [0, 0.5, 1]) ctx.fillText(Math.round(F.Tmin + q * span) + ' K', bx + bw + 4, by0 + bh * (1 - q));
+  }
+
+  let last = null;
+  function tick(now) {
+    if (last !== null && !paused && flow) {
+      const dtReal = Math.min(0.1, (now - last) / 1000);   // cap so a hidden tab doesn't jump
+      const df = flow.rate * dtReal;
+      for (let i = 0; i < N_DOTS; i++) {
+        frac[i] += df;
+        if (frac[i] >= 1) { frac[i] -= Math.floor(frac[i]); yf[i] = 2 * Math.random() - 1; }  // re-enter at the inlet
+      }
+    }
+    last = now;
+    if (flow) drawFrame();
+    requestAnimationFrame(tick);
+  }
+
+  // ---- Controls ---------------------------------------------------------
+  const ids = ['T0', 'p0', 'pamb', 'R', 'gamma'];
+  const inputs = {};
+  ids.forEach(function (id) { inputs[id] = document.getElementById(id); });
+
+  function readInputs() {
+    return {
+      T0: +inputs.T0.value,
+      p0: Math.pow(10, +inputs.p0.value) * 1e5,     // slider is log10(bar)
+      pamb: Math.pow(10, +inputs.pamb.value) * 1e5,
+      R: +inputs.R.value,
+      g: +inputs.gamma.value
+    };
+  }
+
+  function update() {
+    const inp = readInputs();
+    document.getElementById('T0Out').textContent = inp.T0 + ' K';
+    document.getElementById('p0Out').textContent = fmt(inp.p0 / 1e5) + ' bar';
+    document.getElementById('pambOut').textContent = fmt(inp.pamb / 1e5) + ' bar';
+    document.getElementById('ROut').textContent = inp.R + ' J/(kg·K)';
+    document.getElementById('gammaOut').textContent = inp.g.toFixed(2);
+
+    const s = solve(inp.p0, inp.T0, inp.pamb, inp.R, inp.g);
+    setFlow(s, inp);
+    document.getElementById('caption').textContent = s.noFlow ? 'No flow.' :
+      'Dot color shows temperature. Motion is slowed down about ' + fmt(s.slowdown, 2) + ' times.';
+
+    const ratio = inp.p0 / inp.pamb;
+    document.getElementById('title').textContent = s.regime;
+    document.getElementById('err').textContent = s.noFlow
+      ? 'Raise p₀ or lower p_amb: the ambient pressure must be below the stagnation pressure.' : '';
+
+    const c = s.crit, bar = 1e5;
+    let html = '<div class="regime">p₀/p_amb = ' + fmt(ratio, 4) + '</div><dl>';
+    if (isFinite(s.xShock)) {
+      html += '<dt>shock location x</dt><dd>' + s.xShock.toFixed(4) + ' m</dd>' +
+              '<dt>A/A<sub>t</sub> at shock</dt><dd>' + fmt(s.A1 / A_T) + '</dd>' +
+              '<dt>M just before shock</dt><dd>' + fmt(s.M1) + '</dd>' +
+              '<dt>bisection steps</dt><dd>' + s.nIter + '</dd>';
+    }
+    html += '<dt>exit Mach M<sub>e</sub></dt><dd>' + fmt(s.Me) + '</dd>' +
+            '<dt>exit pressure p<sub>e</sub></dt><dd>' + fmt(s.pe / bar) + ' bar</dd>' +
+            '<dt>exit velocity U<sub>e</sub></dt><dd>' + fmt(s.Ue) + ' m/s</dd>' +
+            '<dt>mass flow</dt><dd>' + fmt(s.mdot) + ' kg/s</dd>' +
+            '<dt>thrust</dt><dd>' + fmt(s.thrust) + ' N</dd></dl>' +
+            '<h3>Regime boundaries for this p₀, γ</h3><dl>' +
+            '<dt>throat chokes below</dt><dd>' + fmt(c.choke / bar) + ' bar</dd>' +
+            '<dt>shock at exit plane</dt><dd>' + fmt(c.shockExit / bar) + ' bar</dd>' +
+            '<dt>design (isentropic) p<sub>e</sub></dt><dd>' + fmt(c.design / bar) + ' bar</dd></dl>';
+    document.getElementById('results').innerHTML = html;
+  }
+
+  // ---- Wire up ----------------------------------------------------------
+  document.querySelectorAll('.m').forEach(function (n) {
+    katex.render(n.textContent, n, { throwOnError: false });
+  });
+  // Optional preset from the URL, e.g. ?p0=12&pamb=0.4&T0=2000&R=287&gamma=1.4 (pressures in bar)
+  const q = new URLSearchParams(location.search);
+  function preset(key, id, toSlider) {
+    if (!q.has(key)) return;
+    const v = parseFloat(q.get(key));
+    if (!isFinite(v) || v <= 0) return;
+    const sl = inputs[id], sv = toSlider(v);
+    sl.value = Math.min(+sl.max, Math.max(+sl.min, sv));
+  }
+  preset('T0', 'T0', function (v) { return v; });
+  preset('p0', 'p0', Math.log10);
+  preset('pamb', 'pamb', Math.log10);
+  preset('R', 'R', function (v) { return v; });
+  preset('gamma', 'gamma', function (v) { return v; });
+
+  ids.forEach(function (id) { inputs[id].addEventListener('input', update); });
+  document.getElementById('controls').addEventListener('submit', function (e) { e.preventDefault(); });
+  const pauseBtn = document.getElementById('pause');
+  function syncPause() { pauseBtn.textContent = paused ? 'Play' : 'Pause'; }
+  pauseBtn.addEventListener('click', function () { paused = !paused; syncPause(); });
+  syncPause();
+  readTheme();
+  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', readTheme);
+  window.addEventListener('resize', resize);
+  resize();
+  update();
+  requestAnimationFrame(tick);
+})();
+</script>
+</body>
+</html>

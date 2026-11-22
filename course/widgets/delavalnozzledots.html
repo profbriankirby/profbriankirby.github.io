@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Visualize Fluid Flow Through a de Laval Nozzle</title>
+<title>Visualize Fluid Flow Through an Axisymmetric de Laval Nozzle</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.js"></script>
 <style>
@@ -79,6 +79,25 @@
   input[type=range] { width: 100%; accent-color: var(--accent); }
   .range-row { display: flex; justify-content: space-between; align-items: baseline; font-size: .9rem; }
   .range-row output { font-variant-numeric: tabular-nums; font-weight: 600; }
+  .fixmode { border: 1px solid var(--border); border-radius: 6px; padding: 6px 10px 8px; margin: 0; }
+  .fixmode legend { font-size: .85rem; color: var(--muted); padding: 0 4px; }
+  .fixmode label { display: inline-flex; align-items: center; gap: 4px; margin: 0 14px 0 0; color: var(--fg); cursor: pointer; }
+  .fixmode input { accent-color: var(--accent); margin: 0; }
+  input[type=range]:disabled { opacity: .55; cursor: not-allowed; }
+  .driven-note { font-size: .75rem; color: var(--muted); font-weight: 400; }
+  .zones { position: relative; height: 1.3em; font-size: .75rem; color: var(--muted); }
+  .zone { position: absolute; top: 0; transform: translateX(-50%); white-space: nowrap; font-style: italic; }
+  .marks { position: relative; height: 1.7em; font-size: .75rem; color: var(--muted); }
+  .mark {
+    position: absolute; top: 0; padding-top: 7px; transform: translateX(-50%);
+    white-space: nowrap; cursor: pointer; background: none; border: 0; color: inherit;
+    font: inherit; font-weight: 600;
+  }
+  .mark::before {          /* tick pointing up at the slider position */
+    content: ''; position: absolute; left: 50%; top: 0; width: 2px; height: 6px;
+    margin-left: -1px; background: currentColor;
+  }
+  .mark:hover { color: var(--fg); filter: none; }
   .hint { font-size: .82rem; color: var(--muted); margin: 0; }
   .error { color: var(--error); font-size: .88rem; margin: 0; }
   .results { border-top: 1px solid var(--border); padding-top: 10px; font-size: .85rem; }
@@ -108,7 +127,7 @@
 </head>
 <body>
 <main>
-  <h1>Visualize Fluid Flow Through a de Laval Nozzle</h1>
+  <h1>Visualize Fluid Flow Through an Axisymmetric de Laval Nozzle</h1>
   <p>
     This rocket nozzle is a converging&ndash;diverging (de Laval) nozzle. High-enthalpy gas (high temperature,
     high pressure) from the
@@ -119,7 +138,8 @@
   <p>
     This visualization shows dots moving that are meant to be representative of the fluid moving.
     Each dot travels at the local speed <span class="m">U(x)</span> from a quasi-1D calculation, and its
-    color corresponds to the fluid temperature (red = hot, blue = cold).  A real nozzle would not be perfectly 
+    color corresponds to the fluid temperature (red = hot, blue = cold). The nozzle is axisymmetric,
+    so this is a side view: each dot stays at a fixed fraction of the local radius.  A real nozzle would not be perfectly 
     quasi-1D and the shock, if there is one, would not be perfectly planar. Change the conditions and watch the shock appear, move, and leave the nozzle.
   </p>
 
@@ -128,19 +148,43 @@
   <div class="layout">
     <form class="controls" id="controls" autocomplete="off">
       <div>
-        <div class="range-row"><label for="T0" style="margin:0"><span class="m">T_0</span> (stagnation temperature)</label></div>
-        <div class="range-row"><span></span><output id="T0Out"></output></div>
-        <input type="range" id="T0" min="300" max="2500" step="10" value="2000">
+        <div class="range-row"><label for="ar" style="margin:0"><span class="m">A_e/A_t</span> (expansion ratio)</label></div>
+        <div class="range-row"><span></span><output id="arOut"></output></div>
+        <input type="range" id="ar" min="0" max="2" step="0.001" value="1.47712">
       </div>
+      <fieldset class="fixmode">
+        <legend>Hold fixed</legend>
+        <label><input type="radio" name="fixed" value="p0" checked> <span class="m">p_0</span></label>
+        <label><input type="radio" name="fixed" value="pamb"> <span class="m">p_\text{amb}</span></label>
+      </fieldset>
       <div>
         <div class="range-row"><label for="p0" style="margin:0"><span class="m">p_0</span> (stagnation pressure)</label></div>
         <div class="range-row"><span></span><output id="p0Out"></output></div>
-        <input type="range" id="p0" min="0" max="3" step="0.005" value="0.30103">
+        <input type="range" id="p0" min="0" max="3" step="0.005" value="2">
+      </div>
+      <div>
+        <div class="range-row"><label for="pr" style="margin:0"><span class="m">p_0/p_\text{amb}</span> (pressure ratio)</label></div>
+        <div class="range-row"><span></span><output id="prOut"></output></div>
+        <div class="zones" aria-hidden="true">
+          <span class="zone" id="zoneOver" title="overexpanded: exit pressure below ambient">over</span>
+          <span class="zone" id="zoneUnder" title="underexpanded: exit pressure above ambient">under</span>
+        </div>
+        <input type="range" id="pr" min="1" max="1500" step="1" value="357">
+        <div class="marks">
+          <button type="button" class="mark" id="markChoked" title="throat first reaches M = 1 (subsonic exit)">choked</button>
+          <button type="button" class="mark" id="markShock" title="normal shock at the nozzle exit">shock</button>
+          <button type="button" class="mark" id="markPerfect" title="perfectly expanded (design) condition">perfect</button>
+        </div>
       </div>
       <div>
         <div class="range-row"><label for="pamb" style="margin:0"><span class="m">p_\text{amb}</span> (ambient pressure)</label></div>
         <div class="range-row"><span></span><output id="pambOut"></output></div>
         <input type="range" id="pamb" min="-3" max="0" step="0.005" value="0">
+      </div>
+      <div>
+        <div class="range-row"><label for="T0" style="margin:0"><span class="m">T_0</span> (stagnation temperature)</label></div>
+        <div class="range-row"><span></span><output id="T0Out"></output></div>
+        <input type="range" id="T0" min="300" max="2500" step="10" value="2000">
       </div>
       <div>
         <div class="range-row"><label for="R" style="margin:0"><span class="m">R</span> (specific gas constant)</label></div>
@@ -150,17 +194,24 @@
       <div>
         <div class="range-row"><label for="gamma" style="margin:0"><span class="m">\gamma</span> (ratio of specific heats)</label></div>
         <div class="range-row"><span></span><output id="gammaOut"></output></div>
-        <input type="range" id="gamma" min="1.18" max="1.4" step="0.01" value="1.4">
+        <input type="range" id="gamma" min="1.18" max="1.67" step="0.01" value="1.67">
       </div>
       <button type="button" id="pause">Pause</button>
       <p class="error" id="err" role="alert"></p>
 
       <div class="results" id="results" aria-live="polite"></div>
       <p class="hint">
-        Pressure sliders are logarithmic. The nozzle is 2D, 0.1&nbsp;m deep, with exit-to-throat
-        area ratio 3.75. Thrust coefficient (per unit depth):
-        <span class="m">C_T = \dfrac{\dot m' U_e + (p_e-p_\text{amb})H_e}{p_0 H_t}</span>,
-        with <span class="m">H_e,\ H_t</span> the exit and throat heights.
+        Hold either <span class="m">p_0</span> or <span class="m">p_\text{amb}</span> fixed: that slider and the
+        pressure ratio set the conditions, and the other pressure slider follows. All pressure sliders
+        are logarithmic; the perfectly
+        expanded (design) ratio always sits 2/3 of the way along the ratio slider, and &ldquo;shock&rdquo;
+        marks a normal shock right at the exit. The expansion-ratio slider is logarithmic too: the
+        diverging section is cut off where <span class="m">A/A_t</span> reaches the chosen value (1 ends the
+        nozzle at the throat), keeping <span class="m">p_0/p_\text{amb}</span> fixed. The nozzle is axisymmetric
+        (<span class="m">A = \pi r^2</span>): a minimum-length nozzle designed by the method of
+        characteristics for <span class="m">\gamma = 5/3</span>, that reaches an expansion ratio of 100, with a
+        12.5&nbsp;mm throat radius. Thrust is <span class="m">F = \dot m U_e + (p_e-p_\text{amb})A_e</span>
+        and the thrust coefficient is <span class="m">C_T = F/(p_0 A_t)</span>.
       </p>
     </form>
 
@@ -175,8 +226,9 @@
 
 <script>
 (function () {
-  // ---- Nozzle geometry: [x (m), half-height (m)], throat at x = 0 ------
-  // (from de_laval_nozzle.mlx; designed by the method of characteristics)
+  // ---- Nozzle geometry: [x (m), r (m)], axisymmetric, throat at x = 0 ----
+  // converging section from de_laval_nozzle.mlx + axisymmetric minimum-length
+  // nozzle from minimum_length_nozzle_design.m (gamma = 5/3, A_e/A_t = 100)
   const NOZ = [
     [-0.02, 0.05], [-0.0198, 0.05], [-0.0196, 0.05], [-0.0194, 0.05], [-0.0192, 0.05], [-0.019, 0.05],
     [-0.0188, 0.05], [-0.0186, 0.05], [-0.0184, 0.05], [-0.0182, 0.05], [-0.018, 0.05], [-0.0178, 0.05],
@@ -194,32 +246,104 @@
     [-0.0044, 0.029], [-0.0042, 0.0283], [-0.004, 0.0275], [-0.0038, 0.0267], [-0.0036, 0.026], [-0.0034, 0.0252],
     [-0.0032, 0.0245], [-0.003, 0.0237], [-0.0028, 0.023], [-0.0026, 0.0222], [-0.0024, 0.0215], [-0.0022, 0.0208],
     [-0.002, 0.02], [-0.0018, 0.0192], [-0.0016, 0.0185], [-0.0014, 0.0177], [-0.0012, 0.017], [-0.001, 0.0163],
-    [-0.0008, 0.0155], [-0.0006, 0.0147], [-0.0004, 0.014], [-0.0002, 0.0132], [0, 0.0125], [0.0018, 0.0133],
-    [0.0037, 0.0141], [0.0055, 0.0149], [0.0073, 0.0157], [0.0092, 0.0165], [0.011, 0.0173], [0.0128, 0.0181],
-    [0.0147, 0.0189], [0.0165, 0.0196], [0.0184, 0.0204], [0.0202, 0.0212], [0.022, 0.022], [0.0239, 0.0227],
-    [0.0257, 0.0234], [0.0275, 0.0242], [0.0294, 0.0249], [0.0312, 0.0256], [0.033, 0.0262], [0.0349, 0.0269],
-    [0.0367, 0.0275], [0.0385, 0.0282], [0.0404, 0.0288], [0.0422, 0.0294], [0.044, 0.03], [0.0459, 0.0305],
-    [0.0477, 0.0311], [0.0495, 0.0316], [0.0514, 0.0321], [0.0532, 0.0327], [0.0551, 0.0331], [0.0569, 0.0336],
-    [0.0587, 0.0341], [0.0606, 0.0346], [0.0624, 0.035], [0.0642, 0.0354], [0.0661, 0.0359], [0.0679, 0.0363],
-    [0.0697, 0.0367], [0.0716, 0.0371], [0.0734, 0.0375], [0.0752, 0.0378], [0.0771, 0.0382], [0.0789, 0.0385],
-    [0.0807, 0.0389], [0.0826, 0.0392], [0.0844, 0.0395], [0.0862, 0.0398], [0.0881, 0.0402], [0.0899, 0.0404],
-    [0.0918, 0.0407], [0.0936, 0.041], [0.0954, 0.0413], [0.0973, 0.0415], [0.0991, 0.0418], [0.1009, 0.0421],
-    [0.1028, 0.0423], [0.1046, 0.0425], [0.1064, 0.0428], [0.1083, 0.043], [0.1101, 0.0432], [0.1119, 0.0434],
-    [0.1138, 0.0436], [0.1156, 0.0438], [0.1174, 0.044], [0.1193, 0.0441], [0.1211, 0.0443], [0.1229, 0.0445],
-    [0.1248, 0.0446], [0.1266, 0.0448], [0.1285, 0.0449], [0.1303, 0.0451], [0.1321, 0.0452], [0.134, 0.0453],
-    [0.1358, 0.0455], [0.1376, 0.0456], [0.1395, 0.0457], [0.1413, 0.0458], [0.1431, 0.0459], [0.145, 0.046],
-    [0.1468, 0.0461], [0.1486, 0.0462], [0.1505, 0.0463], [0.1523, 0.0463], [0.1541, 0.0464], [0.156, 0.0465],
-    [0.1578, 0.0465], [0.1596, 0.0466], [0.1615, 0.0466], [0.1633, 0.0467], [0.1652, 0.0467], [0.167, 0.0468],
-    [0.1688, 0.0468], [0.1707, 0.0468], [0.1725, 0.0469], [0.1743, 0.0469], [0.1762, 0.0469], [0.178, 0.0469],
-    [0.1798, 0.0469], [0.1817, 0.0469], [0.1835, 0.0469]
+    [-0.0008, 0.0155], [-0.0006, 0.0147], [-0.0004, 0.014], [-0.0002, 0.0132], [0, 0.0125], [1.00601e-05, 0.0125036],
+    [4.02404e-05, 0.0125142], [9.05408e-05, 0.012532], [0.000160961, 0.012557], [0.000251502, 0.0125892], [0.000362163, 0.0126288], [0.000492944, 0.0126759],
+    [0.000643846, 0.0127307], [0.000814867, 0.0127936], [0.00100601, 0.0128644], [0.00121727, 0.0129433], [0.00144865, 0.0130305], [0.00170016, 0.0131261],
+    [0.00197178, 0.01323], [0.00226352, 0.0133425], [0.00257538, 0.0134638], [0.00290737, 0.013594], [0.00325947, 0.0137331], [0.00363169, 0.0138811],
+    [0.00402404, 0.0140379], [0.0044365, 0.0142038], [0.00486908, 0.0143791], [0.00532179, 0.0145636], [0.00579461, 0.0147572], [0.00628756, 0.0149597],
+    [0.00680062, 0.0151714], [0.00733381, 0.0153924], [0.00788711, 0.0156227], [0.00846054, 0.015862], [0.00905408, 0.01611], [0.00966775, 0.0163669],
+    [0.0103015, 0.0166329], [0.0109554, 0.0169078], [0.0116295, 0.0171912], [0.0123236, 0.0174828], [0.0130379, 0.017783], [0.0137723, 0.0180918],
+    [0.0145268, 0.0184087], [0.0153014, 0.0187333], [0.0160961, 0.0190655], [0.016911, 0.0194057], [0.017746, 0.0197535], [0.0186011, 0.0201084],
+    [0.0194763, 0.0204699], [0.0203717, 0.0208389], [0.0212872, 0.0212147], [0.0222227, 0.0215962], [0.0231785, 0.021982], [0.0241543, 0.0223711],
+    [0.0251502, 0.0227644], [0.0261663, 0.0231633], [0.0272025, 0.0235696], [0.0282588, 0.023985], [0.0293352, 0.0244084], [0.0304318, 0.0248375],
+    [0.0315484, 0.0252695], [0.0326852, 0.0257027], [0.0338421, 0.0261387], [0.0350192, 0.0265778], [0.0362163, 0.0270204], [0.0374336, 0.0274667],
+    [0.038671, 0.0279161], [0.0399285, 0.0283688], [0.0412061, 0.0288246], [0.0425039, 0.0292837], [0.0438218, 0.0297463], [0.0451598, 0.0302115],
+    [0.0465179, 0.0306784], [0.0478961, 0.0311462], [0.0492944, 0.0316155], [0.0507129, 0.0320864], [0.0521515, 0.0325594], [0.0536102, 0.0330346],
+    [0.0550891, 0.0335117], [0.056588, 0.0339904], [0.0581071, 0.0344705], [0.0596463, 0.0349519], [0.0612056, 0.0354346], [0.062785, 0.0359184],
+    [0.0643846, 0.0364032], [0.0660043, 0.0368889], [0.0676441, 0.0373755], [0.069304, 0.0378629], [0.070984, 0.0383509], [0.0726842, 0.0388396],
+    [0.0744044, 0.0393288], [0.0761448, 0.0398186], [0.0779053, 0.0403087], [0.079686, 0.0407992], [0.0814867, 0.0412901], [0.0833076, 0.0417812],
+    [0.0851486, 0.0422724], [0.0870097, 0.0427639], [0.088891, 0.0432554], [0.0907923, 0.043747], [0.0927138, 0.0442386], [0.0946554, 0.0447301],
+    [0.0966171, 0.0452216], [0.098599, 0.0457129], [0.100601, 0.0462041], [0.102623, 0.0466951], [0.104665, 0.0471859], [0.106728, 0.0476762],
+    [0.10881, 0.0481661], [0.110913, 0.0486556], [0.113035, 0.0491446], [0.115178, 0.0496332], [0.117341, 0.0501211], [0.119524, 0.0506086],
+    [0.121727, 0.0510955], [0.12395, 0.0515818], [0.126194, 0.0520675], [0.128457, 0.0525526], [0.130741, 0.053037], [0.133045, 0.0535207],
+    [0.135369, 0.0540038], [0.137713, 0.0544861], [0.140077, 0.0549677], [0.142461, 0.0554485], [0.144865, 0.0559286], [0.14729, 0.0564078],
+    [0.149734, 0.0568863], [0.152199, 0.057364], [0.154684, 0.0578411], [0.157189, 0.0583174], [0.159714, 0.0587926], [0.162259, 0.0592663],
+    [0.164825, 0.0597386], [0.16741, 0.0602096], [0.170016, 0.0606796], [0.172641, 0.0611486], [0.175287, 0.0616167], [0.177953, 0.0620837],
+    [0.180639, 0.0625498], [0.183345, 0.0630152], [0.186071, 0.06348], [0.188818, 0.0639437], [0.191584, 0.0644059], [0.194371, 0.0648661],
+    [0.197178, 0.0653244], [0.200005, 0.0657814], [0.202852, 0.0662373], [0.205719, 0.0666926], [0.208606, 0.0671471], [0.211513, 0.0676004],
+    [0.214441, 0.0680523], [0.217389, 0.0685023], [0.220356, 0.0689508], [0.223344, 0.0693979], [0.226352, 0.0698438], [0.22938, 0.0702888],
+    [0.232428, 0.0707327], [0.235497, 0.0711752], [0.238585, 0.0716159], [0.241694, 0.0720546], [0.244822, 0.0724916], [0.247971, 0.0729273],
+    [0.25114, 0.073362], [0.254329, 0.0737962], [0.257538, 0.0742295], [0.260768, 0.0746612], [0.264017, 0.0750905], [0.267287, 0.0755171],
+    [0.270576, 0.0759417], [0.273886, 0.0763648], [0.277216, 0.0767869], [0.280566, 0.0772079], [0.283936, 0.0776276], [0.287326, 0.078046],
+    [0.290737, 0.078463], [0.294167, 0.0788791], [0.297618, 0.0792938], [0.301088, 0.0797065], [0.304579, 0.0801168], [0.30809, 0.0805246],
+    [0.311621, 0.0809305], [0.315173, 0.0813347], [0.318744, 0.0817376], [0.322335, 0.0821391], [0.325947, 0.0825391], [0.329579, 0.0829376],
+    [0.33323, 0.0833344], [0.336902, 0.0837298], [0.340594, 0.0841237], [0.344307, 0.0845159], [0.348039, 0.0849065], [0.351791, 0.0852956],
+    [0.355564, 0.085683], [0.359357, 0.0860687], [0.363169, 0.0864526], [0.367002, 0.086835], [0.370855, 0.0872156], [0.374728, 0.0875941],
+    [0.378622, 0.0879702], [0.382535, 0.0883442], [0.386468, 0.0887162], [0.390422, 0.0890865], [0.394396, 0.0894553], [0.39839, 0.0898224],
+    [0.402404, 0.0901878], [0.406438, 0.0905514], [0.410492, 0.0909132], [0.414566, 0.0912733], [0.418661, 0.0916316], [0.422775, 0.0919881],
+    [0.42691, 0.0923428], [0.431065, 0.0926957], [0.43524, 0.0930468], [0.439435, 0.0933961], [0.44365, 0.0937435], [0.447885, 0.0940892],
+    [0.452141, 0.094433], [0.456416, 0.0947749], [0.460712, 0.095115], [0.465028, 0.0954533], [0.469364, 0.0957897], [0.47372, 0.0961242],
+    [0.478096, 0.0964569], [0.482492, 0.0967877], [0.486908, 0.0971166], [0.491345, 0.0974437], [0.495802, 0.0977688], [0.500278, 0.0980922],
+    [0.504775, 0.0984136], [0.509292, 0.0987331], [0.513829, 0.0990508], [0.518386, 0.0993666], [0.522964, 0.0996806], [0.527561, 0.0999926],
+    [0.532179, 0.100303], [0.536817, 0.100611], [0.541474, 0.100917], [0.546152, 0.101222], [0.55085, 0.101525], [0.555569, 0.101826],
+    [0.560307, 0.102125], [0.565065, 0.102422], [0.569844, 0.102717], [0.574642, 0.103011], [0.579461, 0.103302], [0.5843, 0.103591],
+    [0.589159, 0.103877], [0.594038, 0.104161], [0.598938, 0.104442], [0.603857, 0.104722], [0.608797, 0.105], [0.613756, 0.105276],
+    [0.618736, 0.105551], [0.623736, 0.105823], [0.628756, 0.106094], [0.633796, 0.106362], [0.638856, 0.106629], [0.643936, 0.106894],
+    [0.649037, 0.107157], [0.654157, 0.107418], [0.659298, 0.107678], [0.664459, 0.107935], [0.66964, 0.108191], [0.674841, 0.108445],
+    [0.680062, 0.108698], [0.685303, 0.108949], [0.690565, 0.109199], [0.695846, 0.109446], [0.701148, 0.10969], [0.70647, 0.10993],
+    [0.711812, 0.110168], [0.717174, 0.110403], [0.722556, 0.110637], [0.727958, 0.110869], [0.733381, 0.1111], [0.738823, 0.111328],
+    [0.744286, 0.111556], [0.749769, 0.111781], [0.755271, 0.112005], [0.760794, 0.112227], [0.766338, 0.112448], [0.771901, 0.112667],
+    [0.777484, 0.112885], [0.783088, 0.113101], [0.788711, 0.113312], [0.794355, 0.113521], [0.800019, 0.113727], [0.805703, 0.113931],
+    [0.811407, 0.114133], [0.817131, 0.114334], [0.822875, 0.114532], [0.82864, 0.114729], [0.834424, 0.114925], [0.840229, 0.115119],
+    [0.846054, 0.115312], [0.851899, 0.115503], [0.857764, 0.115692], [0.863649, 0.11588], [0.869554, 0.116065], [0.875479, 0.116247],
+    [0.881425, 0.116426], [0.887391, 0.116601], [0.893376, 0.116774], [0.899382, 0.116946], [0.905408, 0.117118], [0.911454, 0.117288],
+    [0.917521, 0.117456], [0.923607, 0.117624], [0.929713, 0.11779], [0.93584, 0.117956], [0.941987, 0.118119], [0.948154, 0.118277],
+    [0.954341, 0.11843], [0.960548, 0.118581], [0.966775, 0.11873], [0.973022, 0.118879], [0.97929, 0.119027], [0.985577, 0.119173],
+    [0.991885, 0.119318], [0.998213, 0.119463], [1.00456, 0.119606], [1.01093, 0.119748], [1.01732, 0.119886], [1.02372, 0.120019],
+    [1.03015, 0.120149], [1.0366, 0.120276], [1.04307, 0.120403], [1.04956, 0.120529], [1.05607, 0.120655], [1.0626, 0.120779],
+    [1.06915, 0.120901], [1.07572, 0.121022], [1.0823, 0.121142], [1.08891, 0.121258], [1.09554, 0.121371], [1.10219, 0.121481],
+    [1.10886, 0.121588], [1.11555, 0.121693], [1.12226, 0.121799], [1.12899, 0.121905], [1.13574, 0.12201], [1.14251, 0.122112],
+    [1.14931, 0.12221], [1.15612, 0.122307], [1.16295, 0.122401], [1.1698, 0.122493], [1.17667, 0.122582], [1.18356, 0.12267],
+    [1.19047, 0.122756], [1.1974, 0.122842], [1.20435, 0.122929], [1.21133, 0.123015], [1.21832, 0.123099], [1.22533, 0.123177],
+    [1.23236, 0.123251], [1.23941, 0.123321], [1.24649, 0.123391], [1.25358, 0.123461], [1.26069, 0.123531], [1.26782, 0.1236],
+    [1.27498, 0.123666], [1.28215, 0.123732], [1.28934, 0.123796], [1.29655, 0.123858], [1.30379, 0.123916], [1.31104, 0.123972],
+    [1.31831, 0.124024], [1.32561, 0.124076], [1.33292, 0.124128], [1.34026, 0.12418], [1.34761, 0.124231], [1.35498, 0.124279],
+    [1.36238, 0.124325], [1.36979, 0.124368], [1.37723, 0.124409], [1.38468, 0.124448], [1.39216, 0.124486], [1.39965, 0.124522],
+    [1.40717, 0.124557], [1.4147, 0.124591], [1.42226, 0.124626], [1.42983, 0.124659], [1.43743, 0.12469], [1.44504, 0.124717],
+    [1.45268, 0.124742], [1.46033, 0.124766], [1.46801, 0.124788], [1.4757, 0.124809], [1.48342, 0.124828], [1.49116, 0.124847],
+    [1.49891, 0.124864], [1.50669, 0.124881], [1.51449, 0.124897], [1.5223, 0.124911], [1.53014, 0.124924], [1.538, 0.124936],
+    [1.54587, 0.124946], [1.55377, 0.124954], [1.56169, 0.12496], [1.56963, 0.124966], [1.57758, 0.12497], [1.58556, 0.124973],
+    [1.59356, 0.124975], [1.60158, 0.124977], [1.60961, 0.124979]
   ];
-  const WIDTH = 0.1;                       // depth into the page (m)
-  const X = NOZ.map(function (r) { return r[0]; });
-  const H = NOZ.map(function (r) { return r[1]; });
-  const A = H.map(function (h) { return 2 * h * WIDTH; });
-  let iT = 0;
-  for (let i = 1; i < A.length; i++) if (A[i] < A[iT]) iT = i;
-  const A_T = A[iT], X_T = X[iT], A_E = A[A.length - 1], X_E = X[X.length - 1];
+  const XF = NOZ.map(function (r) { return r[0]; });          // full stored nozzle
+  const HF = NOZ.map(function (r) { return r[1]; });
+  let iTF = 0;
+  for (let i = 1; i < HF.length; i++) if (HF[i] < HF[iTF]) iTF = i;
+  const AR_MAX = Math.pow(HF[HF.length - 1] / HF[iTF], 2);     // just under 100 (MOC wall)
+
+  // current nozzle (cut off at the chosen expansion ratio) and its plot limits
+  let X, H, A, iT, A_T, X_T, A_E, X_E, XB, YLIM;
+  function setGeometry(eps) {
+    eps = Math.min(Math.max(eps, 1), AR_MAX);
+    const rEnd = HF[iTF] * Math.sqrt(eps);   // exit radius for this expansion ratio
+    X = []; H = [];
+    for (let i = 0; i < XF.length; i++) {
+      if (i <= iTF || HF[i] < rEnd) { X.push(XF[i]); H.push(HF[i]); continue; }
+      // the wall radius rises monotonically past the throat: interpolate the cut-off point
+      const f = (rEnd - HF[i - 1]) / (HF[i] - HF[i - 1]);
+      const xe = XF[i - 1] + f * (XF[i] - XF[i - 1]);
+      if (xe > X[X.length - 1] + 1e-12) { X.push(xe); H.push(rEnd); }
+      break;
+    }
+    A = H.map(function (h) { return Math.PI * h * h; });       // axisymmetric: A = pi r^2
+    iT = 0;
+    for (let i = 1; i < A.length; i++) if (A[i] < A[iT]) iT = i;
+    A_T = A[iT]; X_T = X[iT]; A_E = A[A.length - 1]; X_E = X[X.length - 1];
+    const rmax = Math.max.apply(null, H), span = X_E - X[0];
+    XB = [X[0] - 0.02 * span, X_E + 0.02 * span];
+    YLIM = [-1.12 * rmax, 1.12 * rmax];
+  }
+  const radiusAt = function (x) { return Math.sqrt(areaAt(x) / Math.PI); };
   const TOL = 1e-3;                        // exit-pressure tolerance for the shock search (0.1%)
 
   function areaAt(x) {                     // linear interpolation of A(x)
@@ -336,12 +460,9 @@
 
     const n = s.x.length - 1;
     s.pe = s.p[n]; s.Me = s.M[n]; s.Ue = s.U[n];
-    s.mdot = s.rho[n] * s.U[n] * A_E;
-    // thrust coefficient of this 2D nozzle (everything per unit depth into the page):
-    // C_T = [mdot' U_e + (p_e - p_amb) H_e] / (p0 H_t),  mdot' = rho_e U_e H_e,
-    // with H_e, H_t the full exit and throat heights; the depth cancels.
-    const He = A_E / WIDTH, Ht = A_T / WIDTH;
-    s.CT = s.noFlow ? 0 : (s.rho[n] * s.U[n] * s.U[n] * He + (s.pe - pamb) * He) / (p0 * Ht);
+    s.mdot = s.rho[n] * s.U[n] * A_E;           // mass flow (kg/s)
+    s.thrust = s.noFlow ? 0 : s.mdot * s.Ue + (s.pe - pamb) * A_E;   // thrust (N)
+    s.CT = s.thrust / (p0 * A_T);                                  // thrust coefficient
     // plot scales that depend only on the inputs (so the axes don't jump around)
     const TeD = T0 / (1 + (g - 1) / 2 * MeSup * MeSup);
     s.Uscale = MeSup * Math.sqrt(g * R * TeD);
@@ -365,13 +486,23 @@
   // dots per unit area ~ 1/(u h) ~ rho: they bunch up where the gas is dense.
   const canvas = document.getElementById('anim');
   const ctx = canvas.getContext('2d');
-  const XLIM = [-0.025, 0.19], YLIM = [-0.056, 0.056];
+  let XLIM = [0, 1];               // visible x range, set in resize() from XB
+  function niceStep(span, n) {
+    const raw = span / n, mag = Math.pow(10, Math.floor(Math.log10(raw))), f = raw / mag;
+    return (f < 1.5 ? 1 : f < 3 ? 2 : f < 7 ? 5 : 10) * mag;
+  }
+  function tickText(v, step) {
+    const d = Math.max(0, -Math.floor(Math.log10(step) + 1e-9));
+    return (Math.abs(v) < step * 1e-6 ? 0 : v).toFixed(d);
+  }
+  // side view of an axisymmetric flow: a point spread uniformly over a unit disk, seen edge-on
+  function diskY() { return Math.sqrt(Math.random()) * Math.sin(2 * Math.PI * Math.random()); }
   const N_DOTS = 3000;            // number of dots
   const NT = 4000;                // samples in the transit-fraction lookup table
   const CROSS_SECONDS = 1.5;      // real seconds for the fastest dot to cross the nozzle
   const NBINS = 64;               // colour bins (dots drawn in batches per colour)
   const frac = new Float64Array(N_DOTS), yf = new Float64Array(N_DOTS);
-  for (let i = 0; i < N_DOTS; i++) { frac[i] = Math.random(); yf[i] = 2 * Math.random() - 1; }
+  for (let i = 0; i < N_DOTS; i++) { frac[i] = Math.random(); yf[i] = diskY(); }
 
   let flow = null;                // lookup tables for the current case
   let paused = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -410,7 +541,7 @@
       rate = simPerReal / tauEnd;                               // transit fraction per real s
       s.slowdown = 1 / simPerReal;
     }
-    for (let j = 0; j < NT; j++) hT[j] = areaAt(xT[j]) / (2 * WIDTH);
+    for (let j = 0; j < NT; j++) hT[j] = radiusAt(xT[j]);
     const Tmin = inp.T0 / (1 + (inp.g - 1) / 2 * s.crit.MeSup * s.crit.MeSup);  // design exit T
     flow = { xT: xT, TT: TT, hT: hT, rate: rate, Tmin: Tmin, Tmax: inp.T0, xShock: s.xShock };
   }
@@ -423,9 +554,11 @@
     const cs = getComputedStyle(document.documentElement);
     ['--muted', '--axis', '--grid', '--wall', '--shock'].forEach(function (k) { theme[k] = cs.getPropertyValue(k).trim(); });
   }
+  const MAX_PLOT_H = 340;          // CSS px: cap the height for short, fat nozzles
   function resize() {
     const cssW = canvas.parentElement.clientWidth;
-    scale = (cssW - MG.l - MG.r) / (XLIM[1] - XLIM[0]);
+    scale = Math.min((cssW - MG.l - MG.r) / (XB[1] - XB[0]), MAX_PLOT_H / (YLIM[1] - YLIM[0]));
+    XLIM = [XB[0], XB[0] + (cssW - MG.l - MG.r) / scale];   // equal x and r scales
     W = cssW; Hc = MG.t + MG.b + scale * (YLIM[1] - YLIM[0]);
     const dpr = window.devicePixelRatio || 1;
     canvas.style.height = Hc + 'px';
@@ -443,16 +576,20 @@
     ctx.lineWidth = 1;
     ctx.strokeStyle = theme['--grid']; ctx.fillStyle = theme['--muted'];
     ctx.textAlign = 'center'; ctx.textBaseline = 'top';
-    for (let v = 0; v <= 0.15 + 1e-9; v += 0.05) {
+    const xs = niceStep(XLIM[1] - XLIM[0], 6);
+    for (let v = Math.ceil(XLIM[0] / xs) * xs; v <= XLIM[1] + 1e-9; v += xs) {
       ctx.beginPath(); ctx.moveTo(cx(v), cy(YLIM[1])); ctx.lineTo(cx(v), cy(YLIM[0])); ctx.stroke();
-      ctx.fillText(v.toFixed(2), cx(v), cy(YLIM[0]) + 4);
+      ctx.fillText(tickText(v, xs), cx(v), cy(YLIM[0]) + 4);
     }
     ctx.fillText('distance from throat, x (m)', cx(0.5 * (XLIM[0] + XLIM[1])), cy(YLIM[0]) + 20);
     ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
-    for (let v = -0.05; v <= 0.05 + 1e-9; v += 0.025) {
+    const ys = niceStep(YLIM[1] - YLIM[0], 3);
+    for (let v = Math.ceil(YLIM[0] / ys) * ys; v <= YLIM[1] + 1e-9; v += ys) {
       ctx.beginPath(); ctx.moveTo(cx(XLIM[0]), cy(v)); ctx.lineTo(cx(XLIM[1]), cy(v)); ctx.stroke();
-      ctx.fillText((Math.abs(v) < 1e-9 ? 0 : v).toFixed(3), cx(XLIM[0]) - 4, cy(v));
+      ctx.fillText(tickText(v, ys), cx(XLIM[0]) - 4, cy(v));
     }
+    ctx.save(); ctx.translate(12, cy(0)); ctx.rotate(-Math.PI / 2);
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('r (m)', 0, 0); ctx.restore();
     ctx.strokeStyle = theme['--axis'];
     ctx.strokeRect(cx(XLIM[0]), cy(YLIM[1]), (XLIM[1] - XLIM[0]) * scale, (YLIM[1] - YLIM[0]) * scale);
 
@@ -483,7 +620,7 @@
       ctx.stroke();
     }
     if (isFinite(F.xShock)) {
-      const hs = areaAt(F.xShock) / (2 * WIDTH);
+      const hs = radiusAt(F.xShock);
       ctx.strokeStyle = theme['--shock']; ctx.lineWidth = 3;
       ctx.beginPath(); ctx.moveTo(cx(F.xShock), cy(hs)); ctx.lineTo(cx(F.xShock), cy(-hs)); ctx.stroke();
     }
@@ -506,7 +643,7 @@
       const df = flow.rate * dtReal;
       for (let i = 0; i < N_DOTS; i++) {
         frac[i] += df;
-        if (frac[i] >= 1) { frac[i] -= Math.floor(frac[i]); yf[i] = 2 * Math.random() - 1; }  // re-enter at the inlet
+        if (frac[i] >= 1) { frac[i] -= Math.floor(frac[i]); yf[i] = diskY(); }  // re-enter at the inlet
       }
     }
     last = now;
@@ -515,25 +652,93 @@
   }
 
   // ---- Controls ---------------------------------------------------------
-  const ids = ['T0', 'p0', 'pamb', 'R', 'gamma'];
+  const ids = ['T0', 'p0', 'pamb', 'pr', 'R', 'gamma'];
   const inputs = {};
   ids.forEach(function (id) { inputs[id] = document.getElementById(id); });
 
+  // Pressure-ratio slider: logarithmic, with the perfectly expanded (design)
+  // ratio r_d always at 2/3 of the travel (f = 0..1):
+  //   f <= 2/3:  p0/p_amb = r_d^(f/(2/3))                      (1 ... r_d)
+  //   f >= 2/3:  p0/p_amb = r_d*(R_top/r_d)^((f - 2/3)/(1/3))  (r_d ... R_top)
+  // with R_top = max(r_d^1.5, 1000), so even a short nozzle (small r_d) can
+  // reach large pressure ratios.  r_d depends on gamma and the expansion ratio,
+  // so f = 2/3 is always "perfect".
+  const PR_MAX = 1500, F_PERFECT = 2 / 3;
+  function designRatio(g) { return 1 / pRatio(machFromArea(A_E / A_T, true, g), g); }
+  function shockExitRatio(g) {          // p0/p_amb that puts a normal shock at the exit plane
+    const Me = machFromArea(A_E / A_T, true, g);
+    return 1 / (pRatio(Me, g) * shockPRatio(Me, g));
+  }
+  function chokeRatio(g) {             // p0/p_amb at which the throat first chokes (subsonic exit)
+    return 1 / pRatio(machFromArea(A_E / A_T, false, g), g);
+  }
+  function ratioTop(rd) { return Math.max(Math.pow(rd, 1.5), 1000); }
+  function ratioFromSlider(v, g) {
+    const rd = designRatio(g), f = v / PR_MAX;
+    if (f <= F_PERFECT) return Math.pow(rd, f / F_PERFECT);
+    return rd * Math.pow(ratioTop(rd) / rd, (f - F_PERFECT) / (1 - F_PERFECT));
+  }
+  function sliderFromRatio(r, g) {
+    const rd = designRatio(g);
+    if (r <= rd) return PR_MAX * F_PERFECT * Math.log(r) / Math.log(rd);
+    return PR_MAX * (F_PERFECT + (1 - F_PERFECT) * Math.log(r / rd) / Math.log(ratioTop(rd) / rd));
+  }
+  function placeMark(el, fpos) {        // align with the thumb centre (thumb ~16 px wide)
+    el.style.left = 'calc(8px + (100% - 16px) * ' + Math.min(1, Math.max(0, fpos)) + ')';
+  }
+
+  function fixedMode() { return document.querySelector('input[name=fixed]:checked').value; }
+
+  // The held pressure and the ratio are inputs; the other pressure is computed
+  // and its (disabled) slider is moved to match.  If the computed value is off
+  // the end of that slider's range, the slider is pinned at the end and the
+  // readout says so, but the calculation uses the true value.
   function readInputs() {
-    return {
-      T0: +inputs.T0.value,
-      p0: Math.pow(10, +inputs.p0.value) * 1e5,     // slider is log10(bar)
-      pamb: Math.pow(10, +inputs.pamb.value) * 1e5,
-      R: +inputs.R.value,
-      g: +inputs.gamma.value
-    };
+    const g = +inputs.gamma.value;
+    const ratio = ratioFromSlider(+inputs.pr.value, g);
+    const mode = fixedMode();
+    let p0, pamb, driven;
+    if (mode === 'p0') {
+      p0 = Math.pow(10, +inputs.p0.value) * 1e5;          // sliders are log10(bar)
+      pamb = p0 / ratio; driven = inputs.pamb;
+      driven.value = Math.log10(pamb / 1e5);
+    } else {
+      pamb = Math.pow(10, +inputs.pamb.value) * 1e5;
+      p0 = pamb * ratio; driven = inputs.p0;
+      driven.value = Math.log10(p0 / 1e5);
+    }
+    const logv = Math.log10((mode === 'p0' ? pamb : p0) / 1e5);
+    const offScale = logv < +driven.min - 1e-9 || logv > +driven.max + 1e-9;
+    inputs.p0.disabled = (mode !== 'p0');
+    inputs.pamb.disabled = (mode === 'p0');
+    return { T0: +inputs.T0.value, p0: p0, pamb: pamb, ratio: ratio, R: +inputs.R.value, g: g,
+             mode: mode, offScale: offScale };
   }
 
   function update() {
     const inp = readInputs();
     document.getElementById('T0Out').textContent = inp.T0 + ' K';
-    document.getElementById('p0Out').textContent = fmt(inp.p0 / 1e5) + ' bar';
-    document.getElementById('pambOut').textContent = fmt(inp.pamb / 1e5) + ' bar';
+    document.getElementById('arOut').textContent = fmt(A_E / A_T, 3);
+    const note = function (isDriven) {
+      return isDriven ? ' <span class="driven-note">(' + (inp.offScale ? 'off scale' : 'follows') + ')</span>' : '';
+    };
+    document.getElementById('p0Out').innerHTML = fmt(inp.p0 / 1e5) + ' bar' + note(inp.mode !== 'p0');
+    document.getElementById('pambOut').innerHTML = fmt(inp.pamb / 1e5) + ' bar' + note(inp.mode === 'p0');
+    document.getElementById('prOut').textContent = fmt(inp.ratio, 3);
+    placeMark(document.getElementById('markPerfect'), F_PERFECT);
+    const fShock = sliderFromRatio(shockExitRatio(inp.g), inp.g) / PR_MAX;
+    placeMark(document.getElementById('markShock'), fShock);
+    // with little or no diverging section the two conditions coincide: show only "perfect"
+    document.getElementById('markShock').style.visibility = (F_PERFECT - fShock < 0.1) ? 'hidden' : 'visible';
+    const fChoke = sliderFromRatio(chokeRatio(inp.g), inp.g) / PR_MAX;
+    placeMark(document.getElementById('markChoked'), fChoke);
+    // hide 'choked' where it would sit on top of 'shock' (or 'perfect' when 'shock' is hidden)
+    const fNext = (F_PERFECT - fShock < 0.1) ? F_PERFECT : fShock;
+    document.getElementById('markChoked').style.visibility = (fNext - fChoke < 0.12) ? 'hidden' : 'visible';
+    // zone labels above the slider: overexpanded between shock and perfect, underexpanded beyond perfect
+    placeMark(document.getElementById('zoneOver'), 0.5 * (fShock + F_PERFECT));
+    placeMark(document.getElementById('zoneUnder'), 0.5 * (F_PERFECT + 1));
+    document.getElementById('zoneOver').style.visibility = (F_PERFECT - fShock < 0.1) ? 'hidden' : 'visible';
     document.getElementById('ROut').textContent = inp.R + ' J/(kg·K)';
     document.getElementById('gammaOut').textContent = inp.g.toFixed(2);
 
@@ -543,7 +748,7 @@
       'Dot color shows temperature. Motion is slowed down about ' + fmt(s.slowdown, 2) + ' times.';
 
     const ratio = inp.p0 / inp.pamb;
-    document.getElementById('title').textContent = s.regime;
+    document.getElementById('title').textContent = 'Axisymmetric nozzle, A_e/A_t = ' + fmt(A_E / A_T, 3) + ': ' + s.regime;
     document.getElementById('ct').innerHTML = 'thrust coefficient&nbsp; C<sub>T</sub> = ' + s.CT.toFixed(2);
     document.getElementById('err').textContent = s.noFlow
       ? 'Raise p₀ or lower p_amb: the ambient pressure must be below the stagnation pressure.' : '';
@@ -559,7 +764,8 @@
     html += '<dt>exit Mach M<sub>e</sub></dt><dd>' + fmt(s.Me) + '</dd>' +
             '<dt>exit pressure p<sub>e</sub></dt><dd>' + fmt(s.pe / bar) + ' bar</dd>' +
             '<dt>exit velocity U<sub>e</sub></dt><dd>' + fmt(s.Ue) + ' m/s</dd>' +
-            '<dt>mass flow</dt><dd>' + fmt(s.mdot) + ' kg/s</dd></dl>' +
+            '<dt>mass flow</dt><dd>' + fmt(s.mdot) + ' kg/s</dd>' +
+            '<dt>thrust</dt><dd>' + fmt(s.thrust) + ' N</dd></dl>' +
             '<h3>Regime boundaries for this p₀, γ</h3><dl>' +
             '<dt>throat chokes below</dt><dd>' + fmt(c.choke / bar) + ' bar</dd>' +
             '<dt>shock at exit plane</dt><dd>' + fmt(c.shockExit / bar) + ' bar</dd>' +
@@ -571,7 +777,9 @@
   document.querySelectorAll('.m').forEach(function (n) {
     katex.render(n.textContent, n, { throwOnError: false });
   });
-  // Optional preset from the URL, e.g. ?p0=12&pamb=0.4&T0=2000&R=287&gamma=1.4 (pressures in bar)
+  // Optional preset from the URL, e.g. ?ar=25&p0=12&ratio=30&T0=2000&R=287&gamma=1.4
+  // or ?fixed=pamb&pamb=1&ratio=30  (pressures in bar; ratio = p0/p_amb;
+  // giving both p0 and pamb without a ratio sets the ratio from them)
   const q = new URLSearchParams(location.search);
   function preset(key, id, toSlider) {
     if (!q.has(key)) return;
@@ -580,13 +788,50 @@
     const sl = inputs[id], sv = toSlider(v);
     sl.value = Math.min(+sl.max, Math.max(+sl.min, sv));
   }
+  const arInput = document.getElementById('ar');
+  if (q.has('ar')) {
+    const v = parseFloat(q.get('ar'));
+    if (isFinite(v) && v >= 1) arInput.value = Math.min(2, Math.log10(v));
+  }
+  setGeometry(Math.pow(10, +arInput.value));
   preset('T0', 'T0', function (v) { return v; });
   preset('p0', 'p0', Math.log10);
-  preset('pamb', 'pamb', Math.log10);
   preset('R', 'R', function (v) { return v; });
   preset('gamma', 'gamma', function (v) { return v; });
+  if (q.get('fixed') === 'pamb') document.querySelector('input[name=fixed][value=pamb]').checked = true;
+  preset('pamb', 'pamb', Math.log10);
+  if (q.has('pamb') && q.has('p0') && !q.has('ratio')) {
+    const pa = parseFloat(q.get('pamb')), pz = parseFloat(q.get('p0'));
+    if (isFinite(pa) && pa > 0 && isFinite(pz)) q.set('ratio', pz / pa);
+  }
+  // default pressure ratio p0/p_amb = 1000 (the slider position depends on gamma and the geometry)
+  const DEFAULT_RATIO = 1000;
+  if (!q.has('ratio')) inputs.pr.value = Math.round(sliderFromRatio(DEFAULT_RATIO, +inputs.gamma.value));
+  preset('ratio', 'pr', function (r) { return r > 1 ? sliderFromRatio(r, +inputs.gamma.value) : 1; });
+  // click a marker to jump to that condition
+  document.getElementById('markPerfect').addEventListener('click', function () {
+    inputs.pr.value = PR_MAX * F_PERFECT; update();
+  });
+  document.getElementById('markChoked').addEventListener('click', function () {
+    const g = +inputs.gamma.value;
+    inputs.pr.value = Math.max(1, Math.ceil(sliderFromRatio(chokeRatio(g), g))); update();
+  });
+  document.getElementById('markShock').addEventListener('click', function () {
+    const g = +inputs.gamma.value;
+    inputs.pr.value = Math.round(sliderFromRatio(shockExitRatio(g), g)); update();
+  });
 
   ids.forEach(function (id) { inputs[id].addEventListener('input', update); });
+  // expansion ratio: rebuild the nozzle, keep p0/p_amb fixed (move the ratio slider), redraw
+  arInput.addEventListener('input', function () {
+    const g = +inputs.gamma.value;
+    const ratio = ratioFromSlider(+inputs.pr.value, g);
+    setGeometry(Math.pow(10, +arInput.value));
+    inputs.pr.value = Math.min(PR_MAX, Math.max(1, Math.round(sliderFromRatio(ratio, g))));
+    resize();
+    update();
+  });
+  document.querySelectorAll('input[name=fixed]').forEach(function (r) { r.addEventListener('change', update); });
   document.getElementById('controls').addEventListener('submit', function (e) { e.preventDefault(); });
   const pauseBtn = document.getElementById('pause');
   function syncPause() { pauseBtn.textContent = paused ? 'Play' : 'Pause'; }

@@ -680,9 +680,20 @@
   // and its (disabled) slider is moved to match.  If the computed value is off
   // the end of that slider's range, the slider is pinned at the end and the
   // readout says so, but the calculation uses the true value.
+  // The pressure ratio p0/p_amb is kept exactly in prRatio; the ratio slider only
+  // displays it.  Moving the ratio slider sets prRatio (as does changing gamma,
+  // which keeps the slider position); changing the expansion ratio moves the
+  // slider to show the same prRatio, so the ratio itself does not change.
+  let prRatio = 2;
+  function setRatio(r) {
+    prRatio = r;
+    inputs.pr.value = Math.min(PR_MAX, Math.max(1, Math.round(sliderFromRatio(r, +inputs.gamma.value))));
+  }
+  function ratioFromInputSlider() { prRatio = ratioFromSlider(+inputs.pr.value, +inputs.gamma.value); }
+
   function readInputs() {
     const g = +inputs.gamma.value;
-    const ratio = ratioFromSlider(+inputs.pr.value, g);
+    const ratio = prRatio;
     const mode = fixedMode();
     let p0, pamb, driven;
     if (mode === 'p0') {
@@ -793,28 +804,35 @@
   }
   // default pressure ratio p0/p_amb = 1000 (the slider position depends on gamma and the geometry)
   const DEFAULT_RATIO = 1000;
-  if (!q.has('ratio')) inputs.pr.value = Math.round(sliderFromRatio(DEFAULT_RATIO, +inputs.gamma.value));
-  preset('ratio', 'pr', function (r) { return r > 1 ? sliderFromRatio(r, +inputs.gamma.value) : 1; });
+  let r0 = DEFAULT_RATIO;
+  if (q.has('ratio')) {
+    const v = parseFloat(q.get('ratio'));
+    if (isFinite(v) && v > 1) r0 = v;
+  }
+  setRatio(r0);
   // click a marker to jump to that condition
   document.getElementById('markPerfect').addEventListener('click', function () {
-    inputs.pr.value = PR_MAX * F_PERFECT; update();
+    setRatio(designRatio(+inputs.gamma.value)); update();
   });
   document.getElementById('markChoked').addEventListener('click', function () {
     const g = +inputs.gamma.value;
-    inputs.pr.value = Math.max(1, Math.ceil(sliderFromRatio(chokeRatio(g), g))); update();
+    setRatio(chokeRatio(g) * (1 + 1e-6)); update();      // just choked
   });
   document.getElementById('markShock').addEventListener('click', function () {
     const g = +inputs.gamma.value;
-    inputs.pr.value = Math.round(sliderFromRatio(shockExitRatio(g), g)); update();
+    setRatio(shockExitRatio(g)); update();
   });
 
-  ids.forEach(function (id) { inputs[id].addEventListener('input', update); });
+  ids.forEach(function (id) {
+    inputs[id].addEventListener('input', function () {
+      if (id === 'pr' || id === 'gamma') ratioFromInputSlider();   // gamma keeps the slider position
+      update();
+    });
+  });
   // expansion ratio: rebuild the nozzle, keep p0/p_amb fixed (move the ratio slider), redraw
   arInput.addEventListener('input', function () {
-    const g = +inputs.gamma.value;
-    const ratio = ratioFromSlider(+inputs.pr.value, g);
     setGeometry(Math.pow(10, +arInput.value));
-    inputs.pr.value = Math.min(PR_MAX, Math.max(1, Math.round(sliderFromRatio(ratio, g))));
+    setRatio(prRatio);              // same ratio, new slider position
     resize();
     update();
   });

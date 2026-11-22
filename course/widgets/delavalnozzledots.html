@@ -153,7 +153,7 @@
         <input type="range" id="ar" min="0" max="2" step="0.001" value="1.47712">
       </div>
       <fieldset class="fixmode">
-        <legend>Hold fixed</legend>
+        <legend>Hold as set by slider bar</legend>
         <label><input type="radio" name="fixed" value="p0" checked> <span class="m">p_0</span></label>
         <label><input type="radio" name="fixed" value="pamb"> <span class="m">p_\text{amb}</span></label>
       </fieldset>
@@ -189,30 +189,17 @@
       <div>
         <div class="range-row"><label for="R" style="margin:0"><span class="m">R</span> (specific gas constant)</label></div>
         <div class="range-row"><span></span><output id="ROut"></output></div>
-        <input type="range" id="R" min="250" max="1000" step="1" value="287">
+        <input type="range" id="R" min="250" max="1000" step="1" value="370">
       </div>
       <div>
         <div class="range-row"><label for="gamma" style="margin:0"><span class="m">\gamma</span> (ratio of specific heats)</label></div>
         <div class="range-row"><span></span><output id="gammaOut"></output></div>
-        <input type="range" id="gamma" min="1.18" max="1.67" step="0.01" value="1.67">
+        <input type="range" id="gamma" min="1.18" max="1.67" step="0.01" value="1.22">
       </div>
       <button type="button" id="pause">Pause</button>
       <p class="error" id="err" role="alert"></p>
 
       <div class="results" id="results" aria-live="polite"></div>
-      <p class="hint">
-        Hold either <span class="m">p_0</span> or <span class="m">p_\text{amb}</span> fixed: that slider and the
-        pressure ratio set the conditions, and the other pressure slider follows. All pressure sliders
-        are logarithmic; the perfectly
-        expanded (design) ratio always sits 2/3 of the way along the ratio slider, and &ldquo;shock&rdquo;
-        marks a normal shock right at the exit. The expansion-ratio slider is logarithmic too: the
-        diverging section is cut off where <span class="m">A/A_t</span> reaches the chosen value (1 ends the
-        nozzle at the throat), keeping <span class="m">p_0/p_\text{amb}</span> fixed. The nozzle is axisymmetric
-        (<span class="m">A = \pi r^2</span>): a minimum-length nozzle designed by the method of
-        characteristics for <span class="m">\gamma = 5/3</span>, that reaches an expansion ratio of 100, with a
-        12.5&nbsp;mm throat radius. Thrust is <span class="m">F = \dot m U_e + (p_e-p_\text{amb})A_e</span>
-        and the thrust coefficient is <span class="m">C_T = F/(p_0 A_t)</span>.
-      </p>
     </form>
 
     <div class="plot-wrap">
